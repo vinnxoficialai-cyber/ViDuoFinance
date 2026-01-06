@@ -1,0 +1,7 @@
+{
+  "name": "Vinnx - Couple Finance SaaS",
+  "description": "A high-performance shared financial dashboard for couples featuring AI insights, bank management, and advanced data visualization.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
