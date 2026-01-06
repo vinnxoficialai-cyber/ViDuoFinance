@@ -53,7 +53,6 @@ interface FinanceContextType {
   addAccount: (a: Omit<BankAccount, 'id'>) => void;
   deleteAccount: (id: string) => void;
   
-  // NOVAS FUNÇÕES DE BANCO
   addCreditCard: (c: Omit<CreditCard, 'id'>) => void;
   deleteCreditCard: (id: string) => void;
   addGoal: (g: Omit<Goal, 'id'>) => void;
@@ -65,7 +64,6 @@ interface FinanceContextType {
   addProject: (p: Omit<Project, 'id'>) => void;
   deleteProject: (id: string) => void;
 
-  // Setters legados (mantidos para compatibilidade visual enquanto migramos)
   setGoals: React.Dispatch<React.SetStateAction<Goal[]>>;
   setNotes: React.Dispatch<React.SetStateAction<Note[]>>;
   setWishlist: React.Dispatch<React.SetStateAction<WishlistItem[]>>;
@@ -84,7 +82,7 @@ export const useFinance = () => {
   return context;
 };
 
-// --- Componentes Mobile (Mantidos Visuais) ---
+// --- Componentes Mobile (Mantidos) ---
 const MobileMenuDrawer = ({ isOpen, onClose }: { isOpen: boolean, onClose: () => void }) => {
   const { visibleMenus } = useFinance();
   const location = useLocation();
@@ -197,7 +195,6 @@ const App: React.FC = () => {
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(() => { return localStorage.getItem('vinnx_auth') === 'true'; });
   
-  // ESTADOS DO SISTEMA
   const [accounts, setAccounts] = useState<BankAccount[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [creditCards, setCreditCards] = useState<CreditCard[]>([]);
@@ -207,9 +204,10 @@ const App: React.FC = () => {
   const [projects, setProjects] = useState<Project[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   
+  // ESTADO INICIAL DO PERFIL
   const [userProfile, setUserProfile] = useState<UserProfile>(() => {
     const saved = localStorage.getItem('userProfile');
-    return saved ? JSON.parse(saved) : { name: 'Usuário', email: 'usuario@vinnx.com', avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=150', };
+    return saved ? JSON.parse(saved) : { name: 'Usuário', email: 'usuario@vinnx.com', avatar: 'https://ui-avatars.com/api/?name=User&background=random' };
   });
 
   const [familyMember, setFamilyMember] = useState<FamilyMember | null>(() => {
@@ -231,40 +229,46 @@ const App: React.FC = () => {
   });
   const [isDarkMode, setIsDarkMode] = useState(() => { const savedTheme = localStorage.getItem('theme'); return savedTheme ? savedTheme === 'dark' : true; });
 
-  // --- BUSCAR DADOS DE TODAS AS TABELAS ---
+  // --- CARREGAR DADOS ---
   const fetchData = async () => {
     try {
         const user = (await supabase.auth.getUser()).data.user;
         if (!user) return;
 
-        // 1. Contas
+        // 1. DADOS DO PERFIL (A CORREÇÃO PRINCIPAL)
+        const { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+        if (profile) {
+            const newProfile = {
+                name: profile.name || 'Usuário',
+                email: profile.email || user.email || '',
+                avatar: profile.avatar_url || 'https://ui-avatars.com/api/?name=User&background=random'
+            };
+            setUserProfile(newProfile);
+            localStorage.setItem('userProfile', JSON.stringify(newProfile));
+        }
+
+        // 2. Busca restante dos dados...
         const { data: accData } = await supabase.from('accounts').select('*');
         if (accData) setAccounts(accData as any);
 
-        // 2. Transações
         const { data: transData } = await supabase.from('transactions').select('*').order('created_at', { ascending: false });
         if (transData) {
             const formatted = transData.map((t: any) => ({ ...t, account: t.account_name || 'Desconhecido', date: t.date || new Date().toISOString() }));
             setTransactions(formatted);
         }
 
-        // 3. Cartões
         const { data: cardsData } = await supabase.from('credit_cards').select('*');
         if (cardsData) setCreditCards(cardsData as any);
 
-        // 4. Metas
         const { data: goalsData } = await supabase.from('goals').select('*');
         if (goalsData) setGoals(goalsData as any);
 
-        // 5. Notas
         const { data: notesData } = await supabase.from('notes').select('*');
         if (notesData) setNotes(notesData as any);
 
-        // 6. Wishlist
         const { data: wishData } = await supabase.from('wishlist').select('*');
         if (wishData) setWishlist(wishData as any);
 
-        // 7. Projetos
         const { data: projData } = await supabase.from('projects').select('*');
         if (projData) setProjects(projData as any);
 
@@ -276,42 +280,31 @@ const App: React.FC = () => {
   useEffect(() => { localStorage.setItem('visibleMenus', JSON.stringify(visibleMenus)); }, [visibleMenus]);
   useEffect(() => { if (isDarkMode) document.documentElement.classList.add('dark'); else document.documentElement.classList.remove('dark'); localStorage.setItem('theme', isDarkMode ? 'dark' : 'light'); }, [isDarkMode]);
 
-  // --- FUNÇÕES DE PERSISTÊNCIA (SALVAR NO BANCO) ---
-
+  // --- FUNÇÕES CRUD (IGUAIS) ---
   const addTransaction = async (t: Omit<Transaction, 'id'>) => {
     const tempId = Math.random().toString(36).substr(2, 9);
     setTransactions([ { ...t, id: tempId } as Transaction, ...transactions]);
-    if (t.status === 'paid') {
-      setAccounts(prev => prev.map(acc => acc.name === t.account ? { ...acc, balance: t.type === 'income' ? acc.balance + t.amount : acc.balance - t.amount } : acc));
-    }
+    if (t.status === 'paid') setAccounts(prev => prev.map(acc => acc.name === t.account ? { ...acc, balance: t.type === 'income' ? acc.balance + t.amount : acc.balance - t.amount } : acc));
     const user = (await supabase.auth.getUser()).data.user;
     if (user) await supabase.from('transactions').insert([{ description: t.description, amount: t.amount, type: t.type, category: t.category, account_name: t.account, date: t.date, status: t.status, user_id: user.id }]);
   };
-
   const deleteTransaction = async (id: string) => {
     const t = transactions.find(item => item.id === id);
     if (!t) return;
     setTransactions(transactions.filter(item => item.id !== id));
-    if (t.status === 'paid') {
-       setAccounts(prev => prev.map(acc => acc.name === t.account ? { ...acc, balance: t.type === 'income' ? acc.balance - t.amount : acc.balance + t.amount } : acc));
-    }
+    if (t.status === 'paid') setAccounts(prev => prev.map(acc => acc.name === t.account ? { ...acc, balance: t.type === 'income' ? acc.balance - t.amount : acc.balance + t.amount } : acc));
     await supabase.from('transactions').delete().eq('id', id);
   };
-
   const addAccount = async (a: Omit<BankAccount, 'id'>) => {
     const tempId = Math.random().toString(36).substr(2, 9);
     setAccounts([...accounts, { ...a, id: tempId } as BankAccount]);
     const user = (await supabase.auth.getUser()).data.user;
     if (user) await supabase.from('accounts').insert([{ name: a.name, balance: a.balance, type: a.type || 'checking', color: a.color, user_id: user.id }]);
   };
-
   const deleteAccount = async (id: string) => {
     setAccounts(accounts.filter(a => a.id !== id));
     await supabase.from('accounts').delete().eq('id', id);
   };
-
-  // --- NOVAS FUNÇÕES CRUD ---
-
   const addCreditCard = async (c: Omit<CreditCard, 'id'>) => {
     const tempId = Math.random().toString(36).substr(2, 9);
     setCreditCards([...creditCards, { ...c, id: tempId } as CreditCard]);
@@ -322,7 +315,6 @@ const App: React.FC = () => {
     setCreditCards(creditCards.filter(c => c.id !== id));
     await supabase.from('credit_cards').delete().eq('id', id);
   };
-
   const addGoal = async (g: Omit<Goal, 'id'>) => {
     const tempId = Math.random().toString(36).substr(2, 9);
     setGoals([...goals, { ...g, id: tempId } as Goal]);
@@ -333,7 +325,6 @@ const App: React.FC = () => {
     setGoals(goals.filter(g => g.id !== id));
     await supabase.from('goals').delete().eq('id', id);
   };
-
   const addNote = async (n: Omit<Note, 'id'>) => {
     const tempId = Math.random().toString(36).substr(2, 9);
     setNotes([ { ...n, id: tempId } as Note, ...notes]);
@@ -344,7 +335,6 @@ const App: React.FC = () => {
     setNotes(notes.filter(n => n.id !== id));
     await supabase.from('notes').delete().eq('id', id);
   };
-
   const addWishlistItem = async (w: Omit<WishlistItem, 'id'>) => {
     const tempId = Math.random().toString(36).substr(2, 9);
     setWishlist([...wishlist, { ...w, id: tempId } as WishlistItem]);
@@ -355,7 +345,6 @@ const App: React.FC = () => {
     setWishlist(wishlist.filter(w => w.id !== id));
     await supabase.from('wishlist').delete().eq('id', id);
   };
-
   const addProject = async (p: Omit<Project, 'id'>) => {
     const tempId = Math.random().toString(36).substr(2, 9);
     setProjects([...projects, { ...p, id: tempId } as Project]);
@@ -366,7 +355,6 @@ const App: React.FC = () => {
     setProjects(projects.filter(p => p.id !== id));
     await supabase.from('projects').delete().eq('id', id);
   };
-
   const markNotificationRead = (id: string) => setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
   const clearNotifications = () => setNotifications([]);
   const logout = async () => { await supabase.auth.signOut(); setIsAuthenticated(false); localStorage.removeItem('vinnx_auth'); };
@@ -374,14 +362,7 @@ const App: React.FC = () => {
   if (!isAuthenticated) return <Login onLogin={() => setIsAuthenticated(true)} />;
 
   return (
-    <FinanceContext.Provider value={{ 
-        accounts, transactions, creditCards, notifications, visibleMenus, familyMember, userProfile, goals, notes, wishlist, projects, isAuthenticated, appSettings, 
-        setUserProfile, setFamilyMember, setVisibleMenus, setAppSettings, 
-        addTransaction, deleteTransaction, addAccount, deleteAccount, 
-        addCreditCard, deleteCreditCard, addGoal, deleteGoal, addNote, deleteNote, addWishlistItem, deleteWishlistItem, addProject, deleteProject,
-        setGoals, setNotes, setWishlist, setProjects, // Mantidos para compatibilidade
-        markNotificationRead, clearNotifications, logout 
-    }}>
+    <FinanceContext.Provider value={{ accounts, transactions, creditCards, notifications, visibleMenus, familyMember, userProfile, goals, notes, wishlist, projects, isAuthenticated, appSettings, setUserProfile, setFamilyMember, setVisibleMenus, setAppSettings, addTransaction, deleteTransaction, addAccount, deleteAccount, addCreditCard, deleteCreditCard, addGoal, deleteGoal, addNote, deleteNote, addWishlistItem, deleteWishlistItem, addProject, deleteProject, setGoals, setNotes, setWishlist, setProjects, markNotificationRead, clearNotifications, logout }}>
       <Router>
         <div className="flex min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 selection:bg-purple-500/30">
           <aside className={`fixed left-0 top-0 bottom-0 bg-white dark:bg-zinc-900 border-r border-zinc-200 dark:border-zinc-800 transition-all duration-300 z-40 hidden md:block ${sidebarCollapsed ? 'w-20' : 'w-72'}`}>
