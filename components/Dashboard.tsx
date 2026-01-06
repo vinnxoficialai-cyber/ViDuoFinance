@@ -53,12 +53,11 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 const Dashboard: React.FC = () => {
   const { transactions, accounts, creditCards, familyMember, userProfile, goals, notes, wishlist } = useFinance();
 
-  // 1. CÁLCULOS TOTAIS (Baseado no Supabase)
+  // 1. CÁLCULOS TOTAIS
   const totals = useMemo(() => {
     const totalBalance = accounts.reduce((acc, curr) => acc + Number(curr.balance), 0);
     const now = new Date();
     
-    // Filtra transações deste mês
     const monthlyIncome = transactions
       .filter(t => {
         const d = new Date(t.date);
@@ -76,19 +75,45 @@ const Dashboard: React.FC = () => {
     return { balance: totalBalance, income: monthlyIncome, expense: monthlyExpense };
   }, [transactions, accounts]);
 
-  // 2. DADOS DO GRÁFICO (Dinâmico: Últimos 6 meses)
+  // 2. INSIGHT INTELIGENTE DO DIA (NOVO 🧠)
+  const dailyInsight = useMemo(() => {
+    // A. Verifica se gastou mais que ganhou
+    if (totals.income > 0 && totals.expense > totals.income) {
+        return `⚠️ Atenção: Os gastos do mês já superaram as receitas em R$ ${(totals.expense - totals.income).toLocaleString()}. Hora de frear!`;
+    }
+
+    // B. Verifica Metas Próximas
+    const nearGoal = goals.find(g => g.current >= g.target * 0.8 && g.current < g.target);
+    if (nearGoal) {
+        return `🎯 Falta pouco! A meta "${nearGoal.title}" está ${((nearGoal.current / nearGoal.target) * 100).toFixed(0)}% concluída. Mantenham o foco!`;
+    }
+
+    // C. Verifica Uso de Cartão
+    const totalCardUsed = creditCards.reduce((acc, c) => acc + c.used, 0);
+    const totalCardLimit = creditCards.reduce((acc, c) => acc + c.limit, 0);
+    if (totalCardLimit > 0 && (totalCardUsed / totalCardLimit) > 0.5) {
+        return `💳 Cuidado com o crédito. Vocês já usaram ${((totalCardUsed / totalCardLimit) * 100).toFixed(0)}% do limite total dos cartões.`;
+    }
+
+    // D. Cenário Positivo (Padrão)
+    if (totals.balance > 0) {
+        return `🚀 Ótimo trabalho! O saldo está positivo e as contas em dia. Que tal investir o excedente?`;
+    }
+
+    return "Comece cadastrando suas contas e transações para eu gerar insights personalizados!";
+  }, [totals, goals, creditCards]);
+
+  // 3. DADOS DO GRÁFICO (Dinâmico: Últimos 6 meses)
   const chartData = useMemo(() => {
     const months = [];
     const today = new Date();
     
-    // Gera os últimos 6 meses
     for (let i = 5; i >= 0; i--) {
         const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
         const monthName = d.toLocaleDateString('pt-BR', { month: 'short' });
         const monthKey = d.getMonth();
         const yearKey = d.getFullYear();
 
-        // Filtra transações daquele mês específico
         const monthTrans = transactions.filter(t => {
             const tDate = new Date(t.date);
             return tDate.getMonth() === monthKey && tDate.getFullYear() === yearKey;
@@ -111,16 +136,15 @@ const Dashboard: React.FC = () => {
     return months;
   }, [transactions, userProfile, familyMember]);
 
-  // 3. WIDGETS
+  // 4. WIDGETS
   const mainCard = creditCards[0];
   const cardUsage = mainCard ? (mainCard.used / mainCard.limit) * 100 : 0;
   
-  // Calcula total investido baseado nas contas do tipo 'investment'
   const totalInvested = accounts
     .filter(a => a.type === 'investment')
     .reduce((acc, curr) => acc + Number(curr.balance), 0);
     
-  const investmentTrend = [100, 102, 105, 104, 108, 112, 115]; // Simulação visual de tendência (pode manter estático por enquanto)
+  const investmentTrend = [100, 102, 105, 104, 108, 112, 115]; 
 
   const nextDream = useMemo(() => {
     if (!wishlist || wishlist.length === 0) return null;
@@ -137,12 +161,11 @@ const Dashboard: React.FC = () => {
     return "Boa noite";
   }, []);
 
-  // 4. AGENDA REAL (Apenas contas pendentes)
   const agendaItems = useMemo(() => {
     return transactions
       .filter(t => t.status === 'pending' || t.status === 'overdue')
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
-      .slice(0, 4) // Pega as próximas 4 contas
+      .slice(0, 4)
       .map(t => ({
         id: t.id,
         title: t.description,
@@ -155,7 +178,7 @@ const Dashboard: React.FC = () => {
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-700 w-full pb-10">
       
-      {/* 1. SAUDAÇÃO INTELIGENTE */}
+      {/* 1. SAUDAÇÃO INTELIGENTE COM INSIGHT REAL */}
       <div className="relative bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[2.5rem] p-8 md:p-10 shadow-sm overflow-hidden flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
         <div className="relative z-10">
           <h1 className="text-3xl md:text-4xl font-black tracking-tighter text-zinc-900 dark:text-white">
@@ -173,9 +196,7 @@ const Dashboard: React.FC = () => {
           <div>
             <p className="text-[10px] font-black uppercase tracking-widest text-zinc-400 mb-0.5">Vinnx Insight</p>
             <p className="text-xs md:text-sm text-zinc-800 dark:text-zinc-100 font-medium leading-snug">
-               {totals.balance >= 0 
-                 ? "O saldo está positivo! Ótimo momento para revisar as metas." 
-                 : "Atenção ao fluxo de caixa. O saldo atual está negativo."}
+               {dailyInsight}
             </p>
           </div>
         </div>
@@ -364,7 +385,7 @@ const Dashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* 5. METAS E ANOTAÇÕES (Mantido igual) */}
+      {/* 5. METAS E ANOTAÇÕES */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Metas Widget */}
         <Link to="/metas" className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-8 rounded-[2.5rem] shadow-sm hover:shadow-lg transition-all group">
@@ -415,7 +436,7 @@ const Dashboard: React.FC = () => {
                </div>
                <p className="text-xs text-zinc-600 dark:text-zinc-800 line-clamp-2 leading-relaxed">{latestNote.content}</p>
                <div className="mt-4 flex items-center gap-2">
-                  <div className="w-5 h-5 rounded-full bg-white/50 flex items-center justify-center text-[10px] font-black text-zinc-600">{latestNote.createdBy.substring(0,1)}</div>
+                  <div className="w-5 h-5 rounded-full bg-white/50 flex items-center justify-center text-[10px] font-black text-zinc-600">{(latestNote.createdBy || 'U').substring(0,1)}</div>
                   <span className="text-[9px] font-bold text-zinc-500 uppercase tracking-widest">Postado por {latestNote.createdBy}</span>
                </div>
             </div>
