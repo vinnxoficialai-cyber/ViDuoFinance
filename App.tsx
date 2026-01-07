@@ -82,14 +82,14 @@ export const useFinance = () => {
   return context;
 };
 
-// --- Componentes Mobile (Corrigido: Adicionado "Contas") ---
+// --- Componentes Mobile (Corrigido: "Bancos" curto) ---
 const MobileMenuDrawer = ({ isOpen, onClose }: { isOpen: boolean, onClose: () => void }) => {
   const { visibleMenus } = useFinance();
   const location = useLocation();
   if (!isOpen) return null;
   
   const menuItems = [
-    { key: 'contas', label: 'Contas / Bancos', icon: CardIcon, path: '/contas' }, // <--- ITEM ADICIONADO AQUI
+    { key: 'contas', label: 'Bancos', icon: CardIcon, path: '/contas' }, // <--- MUDADO PARA "Bancos"
     { key: 'investimentos', label: 'Investimentos', icon: TrendingUp, path: '/investimentos' },
     { key: 'agenda', label: 'Agenda', icon: CalendarIcon, path: '/agenda' },
     { key: 'metas', label: 'Sonhos', icon: Target, path: '/metas' },
