@@ -1,76 +1,49 @@
-// src/services/aiService.ts
-import { GoogleGenerativeAI } from "@google/generative-ai";
-
 export class VinnxAIService {
-  private genAI: GoogleGenerativeAI;
   private apiKey: string;
 
   constructor() {
-    // CORREÇÃO: No Vite usamos import.meta.env
-    this.apiKey = import.meta.env.VITE_GEMINI_API_KEY || "";
-    if (!this.apiKey) {
-      console.error("VinnxAI Error: API Key do Gemini não encontrada no .env.local");
-    }
-    this.genAI = new GoogleGenerativeAI(this.apiKey);
+    // JEITO SEGURO: Busca a chave nas variáveis de ambiente
+    // Se estiver no seu PC, pega do .env
+    // Se estiver na Vercel, pega das configurações do site
+    this.apiKey = import.meta.env.VITE_GROQ_API_KEY || ""; 
   }
 
-  async getFinancialInsight(data: any) {
-    // Usando o modelo Flash que é rápido e eficiente
-    const model = this.genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-
-    const prompt = `
-      Atue como VinnxAI, um mentor financeiro humano, leve e extremamente direto.
-      Sua missão é dar um toque rápido sobre os dados do casal como se fosse um WhatsApp.
-      
-      REGRAS DE OURO:
-      - Curto e Grosso (com carinho): Máximo de 2 ou 3 frases curtas.
-      - NÃO use listas (numeradas ou bullets).
-      - NÃO use negrito (**).
-      - Sem enrolação: Foque no dado mais importante e comente.
-      - Use expressões como 'Boa!', 'Fica de olho nisso', 'Que tal fazer assim?'.
-      
-      Dados contextuais:
-      ${JSON.stringify(data)}
-      
-      Mande um insight extremamente curto e humano.
-    `;
+  async sendMessage(userMessage: string, financialContext: string) {
+    if (!this.apiKey) {
+      return "⚠️ Configuração Pendente: A Chave da API (VITE_GROQ_API_KEY) não foi encontrada.";
+    }
 
     try {
-      const result = await model.generateContent(prompt);
-      const response = await result.response;
-      return response.text();
-    } catch (error) {
-      console.error("AI Error:", error);
-      return "Oi! Tive um probleminha aqui. Mas ó, continua firme que logo a gente conversa.";
+      const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${this.apiKey}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          model: "llama-3.3-70b-versatile",
+          messages: [
+            {
+              role: "system",
+              content: `Você é a VinnxAI, consultora financeira. Contexto: ${financialContext}. Responda em PT-BR, curto e motivador.`
+            },
+            {
+              role: "user",
+              content: userMessage
+            }
+          ],
+          temperature: 0.7,
+          max_tokens: 300
+        })
+      });
+
+      const data = await response.json();
+      if (data.error) return `❌ Erro na IA: ${data.error.message}`;
+      return data.choices[0].message.content;
+
+    } catch (error: any) {
+      return "Tive um problema de conexão. Tente novamente.";
     }
-  }
-
-  createChat(contextData: string = "") {
-    const model = this.genAI.getGenerativeModel({ 
-      model: "gemini-1.5-flash",
-      systemInstruction: `
-        Você é o VinnxAI, um mentor financeiro para casais.
-        Sua Regra de Ouro: NUNCA pergunte dados que você já possui.
-        Seja extremamente breve (máximo de 3 frases ou 40 palavras).
-
-        DADOS ATUAIS DO CASAL (Leia isso antes de responder):
-        ${contextData}
-
-        Instruções de Resposta:
-        1. Analise os dados acima.
-        2. Responda a pergunta do usuário direto ao ponto.
-        3. Use tom coloquial e parceiro.
-        4. Se o saldo for baixo, dê um alerta suave. Se for alto, parabenize.
-        5. Seja cirúrgico. Sem textão.
-      `
-    });
-
-    return model.startChat({
-      history: [],
-      generationConfig: {
-        maxOutputTokens: 100,
-      },
-    });
   }
 }
 

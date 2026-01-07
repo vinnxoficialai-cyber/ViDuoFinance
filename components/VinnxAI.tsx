@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Send, Trash2, Bot, Sparkles, TrendingUp, TrendingDown, Target, AlertTriangle, ShieldCheck, Wallet } from 'lucide-react';
+import { Send, Trash2, Bot, TrendingUp, TrendingDown, Target, AlertTriangle, ShieldCheck, Wallet } from 'lucide-react';
 import { useFinance } from '../App';
+import { vinnxAI } from '../services/aiService';
 
 interface Message {
   id: string;
@@ -15,15 +16,14 @@ const VinnxAIView: React.FC = () => {
   const [isTyping, setIsTyping] = useState(true);
   
   const chatEndRef = useRef<HTMLDivElement>(null);
-  // Trava de segurança para não duplicar a mensagem inicial
   const hasInitialized = useRef(false);
 
-  // --- 1. CÉREBRO DA IA: CALCULAR O CONTEXTO FINANCEIRO REAL ---
+  // --- 1. CÁLCULO DOS DADOS REAIS (CONTEXTO) ---
   const stats = useMemo(() => {
     const totalBalance = accounts.reduce((acc, curr) => acc + curr.balance, 0);
     const now = new Date();
     
-    // Gastos do Mês Atual
+    // Gastos do Mês
     const expenses = transactions
       .filter(t => {
         const d = new Date(t.date);
@@ -31,7 +31,7 @@ const VinnxAIView: React.FC = () => {
       })
       .reduce((acc, t) => acc + t.amount, 0);
     
-    // Receitas do Mês Atual
+    // Receitas do Mês
     const income = transactions
       .filter(t => {
         const d = new Date(t.date);
@@ -39,7 +39,7 @@ const VinnxAIView: React.FC = () => {
       })
       .reduce((acc, t) => acc + t.amount, 0);
 
-    // Maior Categoria de Gasto
+    // Maior Categoria (Vilão)
     const categories: Record<string, number> = {};
     transactions
       .filter(t => t.type === 'expense' && new Date(t.date).getMonth() === now.getMonth())
@@ -49,105 +49,61 @@ const VinnxAIView: React.FC = () => {
     const topCategory = topCategoryEntry ? topCategoryEntry[0] : 'Nenhuma';
     const topCategoryAmount = topCategoryEntry ? topCategoryEntry[1] : 0;
 
-    // Cartões
-    const creditUsed = creditCards.reduce((acc, c) => acc + c.used, 0);
-    const creditLimit = creditCards.reduce((acc, c) => acc + c.limit, 0);
-    const creditUtilization = creditLimit > 0 ? (creditUsed / creditLimit) * 100 : 0;
-
-    // Metas
+    // Meta Principal
     const mainGoal = goals[0];
     const goalProgress = mainGoal && mainGoal.target > 0 ? ((mainGoal.current / mainGoal.target) * 100).toFixed(0) : "0";
 
-    return { totalBalance, expenses, income, creditUsed, creditUtilization, topCategory, topCategoryAmount, mainGoal, goalProgress };
+    return { totalBalance, expenses, income, topCategory, topCategoryAmount, mainGoal, goalProgress };
   }, [accounts, transactions, creditCards, goals]);
 
-  // --- 2. GERADOR DE RESPOSTAS INTELIGENTES ---
-  const generateAIResponse = (query: string): string[] => {
-    const q = query.toLowerCase();
-    const responses: string[] = [];
-
-    // Lógica: RESUMO
-    if (q.includes('resumo') || q.includes('geral') || q.includes('situação')) {
-        responses.push(`📊 **Resumo Executivo do Casal:**`);
-        responses.push(`O saldo atual em todas as contas é de **R$ ${stats.totalBalance.toLocaleString()}**.`);
-        
-        if (stats.income > stats.expenses) {
-            const savings = stats.income - stats.expenses;
-            responses.push(`✅ **Ótima notícia:** Neste mês, vocês estão no azul! Sobraram **R$ ${savings.toLocaleString()}** até agora.`);
-            responses.push(`💡 **Dica:** Que tal direcionar 50% desse valor para a meta "${stats.mainGoal?.title || 'Reserva'}"?`);
-        } else {
-            const deficit = stats.expenses - stats.income;
-            responses.push(`⚠️ **Atenção:** Os gastos superaram as receitas em R$ ${deficit.toLocaleString()}.`);
-            responses.push(`O maior vilão foi a categoria **${stats.topCategory}** (R$ ${stats.topCategoryAmount.toLocaleString()}). Vamos tentar reduzir isso semana que vem?`);
-        }
-        return responses;
-    }
-
-    // Lógica: CONSELHO / ECONOMIA
-    if (q.includes('conselho') || q.includes('dica') || q.includes('economizar') || q.includes('ajuda')) {
-        responses.push("Analisando seus hábitos de consumo... 🧐");
-        
-        if (stats.creditUtilization > 30) {
-            responses.push(`🚨 **Alerta de Crédito:** Vocês estão usando ${stats.creditUtilization.toFixed(0)}% do limite dos cartões.`);
-            responses.push("Meu conselho número 1: **Parem de usar o cartão** até pagar a próxima fatura. Juros de cartão destroem patrimônios.");
-        } else if (stats.topCategoryAmount > (stats.income * 0.2)) {
-            responses.push(`Notei que **${stats.topCategory}** está consumindo uma fatia muito grande da renda.`);
-            responses.push(`👉 **Desafio da Vinnx:** Tentem reduzir os gastos com ${stats.topCategory} em 20% no próximo mês. Isso liberaria R$ ${(stats.topCategoryAmount * 0.2).toLocaleString()} para seus sonhos!`);
-        } else {
-            responses.push("Vocês estão bem equilibrados! 🏆");
-            responses.push("O próximo passo para a liberdade financeira é aumentar os aportes mensais. Tentem aumentar o investimento mensal em R$ 100,00.");
-        }
-        return responses;
-    }
-
-    // Lógica: METAS
-    if (q.includes('meta') || q.includes('sonho') || q.includes('objetivo')) {
-        if (!stats.mainGoal) return ["Vocês ainda não cadastraram nenhuma meta. Vão na aba 'Metas' e criem um sonho! ✨"];
-        
-        const remaining = stats.mainGoal.target - stats.mainGoal.current;
-        responses.push(`🎯 **Foco no Objetivo: ${stats.mainGoal.title}**`);
-        responses.push(`Já completamos **${stats.goalProgress}%** do caminho.`);
-        
-        if (stats.income > stats.expenses) {
-            const savings = stats.income - stats.expenses;
-            const months = savings > 0 ? Math.ceil(remaining / savings) : 0;
-            if (months > 0) {
-                responses.push(`Faltam R$ ${remaining.toLocaleString()}. No ritmo atual de economia (R$ ${savings.toLocaleString()}/mês), vocês chegam lá em cerca de **${months} meses**! 🚀`);
-            } else {
-                responses.push(`Faltam R$ ${remaining.toLocaleString()}. Continue economizando para acelerar!`);
-            }
-        } else {
-            responses.push(`Faltam R$ ${remaining.toLocaleString()}. Precisamos voltar a economizar para ter uma previsão de quando vamos conquistar isso.`);
-        }
-        return responses;
-    }
-
-    // Fallback
-    return [
-        "Posso analisar qualquer parte da vida financeira de vocês.",
-        "Tente perguntar: 'Me dê um resumo', 'Preciso de um conselho' ou 'Como está minha meta?'"
-    ];
+  // --- 2. PREPARAR O TEXTO PARA A IA ---
+  const getContextString = () => {
+    return `
+      - Nome do Usuário: ${userProfile.name}
+      - Saldo Total (Todas as Contas): R$ ${stats.totalBalance.toLocaleString('pt-BR')}
+      - Total Gasto Este Mês: R$ ${stats.expenses.toLocaleString('pt-BR')}
+      - Total Recebido Este Mês: R$ ${stats.income.toLocaleString('pt-BR')}
+      - Categoria Onde Mais Gastou: ${stats.topCategory} (R$ ${stats.topCategoryAmount.toLocaleString('pt-BR')})
+      - Progresso da Meta Principal: ${stats.goalProgress}%
+    `;
   };
 
-  // --- 3. EFEITO DE DIGITAÇÃO E BOAS VINDAS ---
-  
-  // Função para simular a IA digitando
-  const simulateConversation = async (texts: string[]) => {
+  // --- 3. EFEITO DE DIGITAÇÃO ---
+  const simulateTypingEffect = async (text: string) => {
     setIsTyping(true);
-    for (const text of texts) {
-        // Tempo de leitura proporcional ao texto (mínimo 800ms)
-        await new Promise(resolve => setTimeout(resolve, 800 + text.length * 20));
-        setMessages(prev => {
-            // Evita duplicar se a última mensagem for idêntica (segurança extra)
-            if (prev.length > 0 && prev[prev.length - 1].text === text) return prev;
-            return [...prev, { id: Math.random().toString(), role: 'model', text }];
-        });
+    await new Promise(resolve => setTimeout(resolve, 600)); // Delay inicial
+    
+    // Divide em parágrafos para não vir um bloco de texto gigante
+    const paragraphs = text.split('\n').filter(p => p.trim() !== "");
+
+    for (const paragraph of paragraphs) {
+        // Velocidade da digitação baseada no tamanho do texto
+        await new Promise(resolve => setTimeout(resolve, 500 + Math.min(paragraph.length * 10, 1500)));
+        setMessages(prev => [...prev, { id: Math.random().toString(), role: 'model', text: paragraph }]);
     }
     setIsTyping(false);
   };
 
+  // --- 4. AÇÃO DE ENVIAR (CONECTADA AO SERVIÇO) ---
+  const handleAction = async (text: string) => {
+    if (!text.trim() || isTyping) return;
+
+    // 1. Mostra a mensagem do usuário
+    setMessages(prev => [...prev, { id: Math.random().toString(), role: 'user', text }]);
+    setInputValue('');
+    setIsTyping(true);
+
+    // 2. Pega os dados atuais e manda para a IA
+    const context = getContextString();
+    const response = await vinnxAI.sendMessage(text, context);
+
+    // 3. Exibe a resposta da IA com efeito
+    setIsTyping(false); // Reseta para o simulateTypingEffect assumir
+    await simulateTypingEffect(response);
+  };
+
+  // Mensagem Inicial
   useEffect(() => {
-    // Se já inicializou, não faz nada (Evita duplicação no React StrictMode)
     if (hasInitialized.current) return;
     hasInitialized.current = true;
 
@@ -156,40 +112,13 @@ const VinnxAIView: React.FC = () => {
     if (hour >= 12) greeting = "Boa tarde";
     if (hour >= 18) greeting = "Boa noite";
 
-    // Mensagem de Boas-vindas baseada no Saldo
-    let initialTip = "";
-    if (stats.totalBalance < 0) initialTip = "Vi que o saldo está negativo. Quer um plano de recuperação?";
-    else if (stats.expenses > stats.income && stats.income > 0) initialTip = "Os gastos estão altos este mês. Quer um resumo?";
-    else initialTip = "As finanças estão saudáveis! Como posso ajudar a otimizar hoje?";
+    let initialTip = "Tudo sob controle por enquanto. Sobre o que vamos falar?";
+    if (stats.totalBalance < 0) initialTip = "⚠️ O saldo está negativo. Vamos traçar um plano?";
+    else if (stats.expenses > stats.income && stats.income > 0) initialTip = `⚠️ Atenção: Os gastos com ${stats.topCategory} estão altos.`;
 
-    const welcomeMsg = [
-        `${greeting}, ${userProfile.name}! 👋`,
-        `Sou a Vinnx, sua consultora financeira.`,
-        initialTip
-    ];
-
-    simulateConversation(welcomeMsg);
+    simulateTypingEffect(`${greeting}, ${userProfile.name}! 👋\nSou a Vinnx.\n${initialTip}`);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Roda apenas ao montar
-
-  const handleSendMessage = () => {
-    if (!inputValue.trim() || isTyping) return;
-
-    const text = inputValue;
-    setInputValue('');
-    setMessages(prev => [...prev, { id: Math.random().toString(), role: 'user', text }]);
-    
-    // Aciona a IA
-    const aiResponses = generateAIResponse(text);
-    simulateConversation(aiResponses);
-  };
-
-  const handleQuickAction = (text: string) => {
-    if (isTyping) return;
-    setMessages(prev => [...prev, { id: Math.random().toString(), role: 'user', text }]);
-    const aiResponses = generateAIResponse(text);
-    simulateConversation(aiResponses);
-  };
+  }, []); 
 
   // Auto-scroll
   useEffect(() => {
@@ -199,7 +128,7 @@ const VinnxAIView: React.FC = () => {
   return (
     <div className="flex flex-col h-[80vh] md:h-[85vh] bg-[#09090b] rounded-[2.5rem] overflow-hidden border border-zinc-800 shadow-2xl relative max-w-5xl mx-auto animate-in fade-in zoom-in-95 duration-500">
       
-      {/* 1. Header Fixo */}
+      {/* 1. Header */}
       <header className="flex items-center justify-between px-6 py-4 bg-[#09090b]/90 backdrop-blur-md border-b border-zinc-800 z-10">
         <div className="flex items-center gap-3">
           <div className="relative">
@@ -213,7 +142,7 @@ const VinnxAIView: React.FC = () => {
           </div>
           <div>
             <h2 className="text-sm font-bold text-white tracking-wide">VinnxAI</h2>
-            <p className="text-[10px] font-bold text-[#A3E635] uppercase tracking-widest">Consultora Oficial</p>
+            <p className="text-[10px] font-bold text-[#A3E635] uppercase tracking-widest">Online</p>
           </div>
         </div>
         <button onClick={() => { setMessages([]); hasInitialized.current = false; window.location.reload(); }} className="p-2 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-full transition-all">
@@ -221,7 +150,7 @@ const VinnxAIView: React.FC = () => {
         </button>
       </header>
 
-      {/* 2. Mini Dashboard (Resumo Rápido) */}
+      {/* 2. Mini Dashboard (Dados Reais) */}
       <div className="grid grid-cols-3 gap-1 px-4 py-2 bg-[#18181b] border-b border-zinc-800">
          <div className="flex flex-col items-center justify-center p-2 rounded-xl bg-zinc-900/50 border border-zinc-800/50">
             <div className="flex items-center gap-1 text-[9px] uppercase font-bold text-zinc-500 mb-0.5"><TrendingUp size={10} /> Saldo</div>
@@ -247,7 +176,6 @@ const VinnxAIView: React.FC = () => {
                   : 'bg-[#8B5CF6] text-white rounded-2xl rounded-tl-none'
               }`}
             >
-              {/* Renderização de Markdown Simples */}
               {msg.text.split('\n').map((line, i) => (
                   <p key={i} className={i > 0 ? 'mt-2' : ''}>
                       {line.split('**').map((part, idx) => idx % 2 === 1 ? <strong key={idx}>{part}</strong> : part)}
@@ -269,19 +197,19 @@ const VinnxAIView: React.FC = () => {
         <div ref={chatEndRef} />
       </div>
 
-      {/* 4. Sugestões Rápidas (Aparecem quando não está digitando) */}
+      {/* 4. Sugestões Rápidas */}
       {!isTyping && messages.length > 0 && (
         <div className="px-4 pb-2 flex gap-2 overflow-x-auto scrollbar-hide">
-            <button onClick={() => handleQuickAction("Gere um resumo financeiro")} className="whitespace-nowrap px-4 py-2 bg-zinc-900 border border-zinc-800 rounded-full text-[10px] font-bold text-zinc-400 hover:text-white hover:border-[#8B5CF6] transition-all flex items-center gap-2">
+            <button onClick={() => handleAction("Faça um resumo financeiro geral")} className="whitespace-nowrap px-4 py-2 bg-zinc-900 border border-zinc-800 rounded-full text-[10px] font-bold text-zinc-400 hover:text-white hover:border-[#8B5CF6] transition-all flex items-center gap-2">
                 <Wallet size={12}/> Resumo Geral
             </button>
-            <button onClick={() => handleQuickAction("Me dê um conselho para economizar")} className="whitespace-nowrap px-4 py-2 bg-zinc-900 border border-zinc-800 rounded-full text-[10px] font-bold text-zinc-400 hover:text-white hover:border-[#8B5CF6] transition-all flex items-center gap-2">
+            <button onClick={() => handleAction("Dê uma dica para economizar")} className="whitespace-nowrap px-4 py-2 bg-zinc-900 border border-zinc-800 rounded-full text-[10px] font-bold text-zinc-400 hover:text-white hover:border-[#8B5CF6] transition-all flex items-center gap-2">
                 <ShieldCheck size={12}/> Dica de Economia
             </button>
-            <button onClick={() => handleQuickAction("Como está minha meta principal?")} className="whitespace-nowrap px-4 py-2 bg-zinc-900 border border-zinc-800 rounded-full text-[10px] font-bold text-zinc-400 hover:text-white hover:border-[#8B5CF6] transition-all flex items-center gap-2">
+            <button onClick={() => handleAction("Analise minha meta principal")} className="whitespace-nowrap px-4 py-2 bg-zinc-900 border border-zinc-800 rounded-full text-[10px] font-bold text-zinc-400 hover:text-white hover:border-[#8B5CF6] transition-all flex items-center gap-2">
                 <Target size={12}/> Analisar Meta
             </button>
-            <button onClick={() => handleQuickAction("Estou gastando muito com cartão?")} className="whitespace-nowrap px-4 py-2 bg-zinc-900 border border-zinc-800 rounded-full text-[10px] font-bold text-zinc-400 hover:text-white hover:border-[#8B5CF6] transition-all flex items-center gap-2">
+            <button onClick={() => handleAction("Estou gastando muito com cartão?")} className="whitespace-nowrap px-4 py-2 bg-zinc-900 border border-zinc-800 rounded-full text-[10px] font-bold text-zinc-400 hover:text-white hover:border-[#8B5CF6] transition-all flex items-center gap-2">
                 <AlertTriangle size={12}/> Alerta Cartão
             </button>
         </div>
@@ -289,12 +217,12 @@ const VinnxAIView: React.FC = () => {
 
       {/* 5. Área de Input */}
       <div className="p-4 bg-[#09090b] border-t border-zinc-800">
-        <form onSubmit={(e) => { e.preventDefault(); handleSendMessage(); }} className="relative flex items-center gap-3">
+        <form onSubmit={(e) => { e.preventDefault(); handleAction(inputValue); }} className="relative flex items-center gap-3">
           <input 
             type="text" 
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
-            placeholder="Digite algo para a Vinnx..."
+            placeholder="Pergunte sobre seus gastos..."
             disabled={isTyping}
             className="w-full bg-[#18181b] text-white border border-zinc-800 rounded-full pl-6 pr-14 py-4 text-sm focus:outline-none focus:ring-2 focus:ring-[#8B5CF6]/50 transition-all placeholder:text-zinc-600 disabled:opacity-50"
           />

@@ -1,0 +1,18 @@
+vinnx---couple-finance-saas@0.0.0 C:\Users\User\Documents\Vinnx\Aplicativos Saas\Duo Finance 1.0.1
+Ôö£ÔöÇÔöÇ @google/genai@1.34.0
+Ôö£ÔöÇÔöÇ @google/generative-ai@0.24.1
+Ôö£ÔöÇÔöÇ @supabase/supabase-js@2.89.0
+Ôö£ÔöÇÔöÇ @types/node@22.19.3
+Ôö£ÔöÇÔöÇ @vitejs/plugin-react@5.1.2
+Ôö£ÔöÇÔöÇ clsx@2.1.1
+Ôö£ÔöÇÔöÇ date-fns@4.1.0
+Ôö£ÔöÇÔöÇ lucide-react@0.562.0
+Ôö£ÔöÇÔöÇ react-dom@19.2.3
+Ôö£ÔöÇÔöÇ react-router-dom@7.11.0
+Ôö£ÔöÇÔöÇ react@19.2.3
+Ôö£ÔöÇÔöÇ recharts@3.6.0
+Ôö£ÔöÇÔöÇ tailwind-merge@3.4.0
+Ôö£ÔöÇÔöÇ typescript@5.8.3
+Ôö£ÔöÇÔöÇ vite-plugin-pwa@1.2.0
+ÔööÔöÇÔöÇ vite@6.4.1
+
