@@ -82,12 +82,14 @@ export const useFinance = () => {
   return context;
 };
 
-// --- Componentes Mobile (Mantidos) ---
+// --- Componentes Mobile (Corrigido: Adicionado "Contas") ---
 const MobileMenuDrawer = ({ isOpen, onClose }: { isOpen: boolean, onClose: () => void }) => {
   const { visibleMenus } = useFinance();
   const location = useLocation();
   if (!isOpen) return null;
+  
   const menuItems = [
+    { key: 'contas', label: 'Contas / Bancos', icon: CardIcon, path: '/contas' }, // <--- ITEM ADICIONADO AQUI
     { key: 'investimentos', label: 'Investimentos', icon: TrendingUp, path: '/investimentos' },
     { key: 'agenda', label: 'Agenda', icon: CalendarIcon, path: '/agenda' },
     { key: 'metas', label: 'Sonhos', icon: Target, path: '/metas' },
@@ -97,6 +99,7 @@ const MobileMenuDrawer = ({ isOpen, onClose }: { isOpen: boolean, onClose: () =>
     { key: 'vinnx-ai', label: 'VinnxAI', icon: Sparkles, path: '/vinnx-ai' },
     { key: 'perfil', label: 'Perfil', icon: User, path: '/perfil' },
   ];
+
   return (
     <div className="fixed inset-0 z-[100] md:hidden animate-in fade-in duration-300">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose}></div>
@@ -244,7 +247,6 @@ const App: React.FC = () => {
   const fetchData = async () => {
     try {
         // 🔴 2. VERIFICAÇÃO "MATADORA DE ZUMBI"
-        // Tenta pegar o usuário. Se der erro ou vier null, chuta pra fora.
         const { data: { user }, error: authError } = await supabase.auth.getUser();
         
         if (authError || !user) {
