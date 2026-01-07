@@ -89,7 +89,7 @@ const MobileMenuDrawer = ({ isOpen, onClose }: { isOpen: boolean, onClose: () =>
   if (!isOpen) return null;
   
   const menuItems = [
-    { key: 'contas', label: 'Bancos', icon: CardIcon, path: '/contas' }, // <--- MUDADO PARA "Bancos"
+    { key: 'contas', label: 'Bancos', icon: CardIcon, path: '/contas' },
     { key: 'investimentos', label: 'Investimentos', icon: TrendingUp, path: '/investimentos' },
     { key: 'agenda', label: 'Agenda', icon: CalendarIcon, path: '/agenda' },
     { key: 'metas', label: 'Sonhos', icon: Target, path: '/metas' },
@@ -166,13 +166,13 @@ const AddTransactionModal = ({ isOpen, onClose }: { isOpen: boolean, onClose: ()
 
   return (
     <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-300">
-      <div className="bg-white dark:bg-zinc-900 w-full max-md rounded-[2.5rem] p-8 shadow-2xl animate-in zoom-in-95 duration-300">
-        <div className="flex justify-between items-center mb-8"><h3 className="text-xl font-black uppercase tracking-tighter">Nova Atividade</h3><button onClick={onClose} className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full"><X size={20} /></button></div>
-        <div className="flex gap-2 p-1 bg-zinc-100 dark:bg-zinc-800 rounded-2xl mb-8">
+      <div className="bg-white dark:bg-zinc-900 w-full max-md rounded-[2.5rem] p-6 md:p-8 shadow-2xl animate-in zoom-in-95 duration-300">
+        <div className="flex justify-between items-center mb-6 md:mb-8"><h3 className="text-lg md:text-xl font-black uppercase tracking-tighter">Nova Atividade</h3><button onClick={onClose} className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full"><X size={20} /></button></div>
+        <div className="flex gap-2 p-1 bg-zinc-100 dark:bg-zinc-800 rounded-2xl mb-6 md:mb-8">
            <button onClick={() => setPaymentMethod('debit')} className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${paymentMethod === 'debit' ? 'bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white shadow-sm' : 'text-zinc-500'}`}>Débito / PIX</button>
            <button onClick={() => setPaymentMethod('credit')} className={`flex-1 py-3 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${paymentMethod === 'credit' ? 'bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white shadow-sm' : 'text-zinc-500'}`}>Crédito</button>
         </div>
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <form onSubmit={handleSubmit} className="space-y-5 md:space-y-6">
           <div className="space-y-1"><label className="text-[10px] font-black uppercase text-zinc-400 tracking-widest ml-1">Descrição</label><input required value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-4 text-sm font-bold" /></div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1"><label className="text-[10px] font-black uppercase text-zinc-400 tracking-widest ml-1">Valor</label><input required type="number" step="0.01" value={formData.amount} onChange={e => setFormData({...formData, amount: e.target.value})} className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-4 text-sm font-black text-purple-600" /></div>

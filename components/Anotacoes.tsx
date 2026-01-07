@@ -1,13 +1,20 @@
-import React, { useState } from 'react';
-import { Sparkles, Plus, Trash2, Heart, Flame, X } from 'lucide-react';
-import { Note } from '../types';
+import React, { useState, useEffect } from 'react';
+import { Sparkles, Plus, Trash2, Heart, Flame, Gem, X } from 'lucide-react';
 import { useFinance } from '../App';
+import { supabase } from '../supabaseClient';
+
+// Interface para as partículas da animação
+interface Particle {
+  id: number;
+  x: number;
+  emoji: string;
+  duration: number;
+}
 
 const Anotacoes: React.FC = () => {
-  // Agora usamos addNote e deleteNote que conversam com o Supabase
-  const { notes, addNote, deleteNote, userProfile, familyMember } = useFinance();
-  
+  const { notes, addNote, deleteNote, userProfile, familyMember, setNotes } = useFinance();
   const [isAdding, setIsAdding] = useState(false);
+  const [particles, setParticles] = useState<Particle[]>([]);
   
   const [newNote, setNewNote] = useState({ 
     title: '', 
@@ -27,14 +34,32 @@ const Anotacoes: React.FC = () => {
 
   const availableAuthors = [userProfile.name, familyMember?.name].filter(Boolean) as string[];
 
+  // --- FUNÇÃO DE CHUVA DE EMOJIS (10 Segundos) ---
+  const triggerConfetti = (emoji: string) => {
+    const newParticles: Particle[] = [];
+    for (let i = 0; i < 50; i++) {
+      newParticles.push({
+        id: Math.random(),
+        x: Math.random() * 100, // Posição horizontal aleatória (0-100%)
+        emoji: emoji,
+        duration: 2 + Math.random() * 8 // Duração entre 2s e 10s
+      });
+    }
+    setParticles(prev => [...prev, ...newParticles]);
+
+    // Limpa as partículas depois que a animação acaba
+    setTimeout(() => {
+        setParticles(prev => prev.filter(p => !newParticles.includes(p)));
+    }, 10000);
+  };
+
   const handleAddNote = () => {
     if (!newNote.title.trim()) return;
     
-    // Chama a função que grava no banco de dados
     addNote({
       title: newNote.title,
       content: newNote.content,
-      date: new Date().toISOString().split('T')[0], // Formato data padrão do banco
+      date: new Date().toISOString().split('T')[0],
       createdBy: newNote.createdBy,
       color: newNote.color,
       emoji: newNote.emoji,
@@ -47,7 +72,26 @@ const Anotacoes: React.FC = () => {
 
   const handleDelete = (id: string) => {
     if(window.confirm("Deseja remover este post-it?")) {
-      deleteNote(id); // Deleta do banco
+      deleteNote(id);
+    }
+  };
+
+  // --- FUNÇÃO DE REAÇÃO (Salva no Banco e Anima) ---
+  const handleReact = async (noteId: string, type: 'heart' | 'fire' | 'gem') => {
+    // 1. Dispara animação visual
+    const emojiMap = { heart: '❤️', fire: '🔥', gem: '💎' };
+    triggerConfetti(emojiMap[type]);
+
+    // 2. Atualiza visualmente (Optimistic UI)
+    setNotes(prev => prev.map(n => n.id === noteId ? { ...n, reactions: (n.reactions || 0) + 1 } : n));
+
+    // 3. Salva no Banco de Dados
+    const note = notes.find(n => n.id === noteId);
+    if (note) {
+        await supabase
+            .from('notes')
+            .update({ reactions: (note.reactions || 0) + 1 })
+            .eq('id', noteId);
     }
   };
 
@@ -60,7 +104,38 @@ const Anotacoes: React.FC = () => {
   };
 
   return (
-    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-24">
+    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-24 relative overflow-hidden min-h-screen">
+      
+      {/* Camada de Animação (Chuva) */}
+      <div className="fixed inset-0 pointer-events-none z-[200] overflow-hidden">
+        {particles.map((p) => (
+            <div 
+                key={p.id}
+                className="absolute text-4xl animate-fall"
+                style={{
+                    left: `${p.x}%`,
+                    top: '-50px',
+                    animationDuration: `${p.duration}s`
+                }}
+            >
+                {p.emoji}
+            </div>
+        ))}
+      </div>
+
+      {/* Estilo da Animação CSS */}
+      <style>{`
+        @keyframes fall {
+            0% { transform: translateY(-50px) rotate(0deg); opacity: 1; }
+            100% { transform: translateY(110vh) rotate(360deg); opacity: 0; }
+        }
+        .animate-fall {
+            animation-name: fall;
+            animation-timing-function: linear;
+            animation-fill-mode: forwards;
+        }
+      `}</style>
+
       {/* Mural Header */}
       <div className="flex flex-col items-center justify-center text-center space-y-4">
         <div className="flex -space-x-4">
@@ -87,13 +162,8 @@ const Anotacoes: React.FC = () => {
         <div className="columns-1 sm:columns-2 lg:columns-3 gap-8 space-y-8">
           {notes.map((note, index) => {
             const rotation = rotationClasses[index % rotationClasses.length];
-            
-            // Tratamento especial: O banco retorna 'created_by', o app usa 'createdBy'
-            // Isso garante que funcione nos dois casos
             const creatorName = note.createdBy || (note as any).created_by || 'Anônimo';
             const authorAvatar = getAvatarByName(creatorName);
-            
-            // Tratamento de data para exibição
             const displayDate = new Date(note.date).toLocaleDateString('pt-BR');
 
             return (
@@ -101,7 +171,7 @@ const Anotacoes: React.FC = () => {
                 key={note.id} 
                 className={`break-inside-avoid group relative ${note.color} dark:bg-opacity-20 dark:border-zinc-800/50 p-8 rounded-3xl shadow-lg transition-all duration-500 hover:shadow-2xl hover:scale-[1.02] border border-zinc-200/50 ${rotation} hover:rotate-0`}
               >
-                {/* Creator Avatar & Info */}
+                {/* Creator Info */}
                 <div className="flex justify-between items-start mb-6">
                     <div className="flex items-center gap-3">
                       <div className={`relative p-0.5 rounded-full ${creatorName === userProfile.name ? 'bg-blue-400' : 'bg-rose-400'} shadow-[0_0_10px_rgba(0,0,0,0.1)]`}>
@@ -127,11 +197,32 @@ const Anotacoes: React.FC = () => {
                   {note.content}
                 </p>
                 
+                {/* --- BARRA DE REAÇÕES --- */}
                 <div className="flex items-center justify-between pt-4 border-t border-black/5 dark:border-white/5">
                   <div className="flex gap-2">
-                    <button className="flex items-center gap-1.5 px-3 py-1.5 bg-white/50 dark:bg-zinc-800/50 hover:bg-white dark:hover:bg-zinc-700 rounded-full transition-all active:scale-90 shadow-sm">
-                      <Heart size={14} className="text-rose-500" />
+                    {/* Botão Coração */}
+                    <button 
+                        onClick={() => handleReact(note.id, 'heart')}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-white/50 dark:bg-zinc-800/50 hover:bg-white dark:hover:bg-zinc-700 rounded-full transition-all active:scale-90 shadow-sm group/btn"
+                    >
+                      <Heart size={14} className="text-rose-500 group-hover/btn:fill-rose-500 transition-colors" />
                       <span className="text-xs font-black">{note.reactions || 0}</span>
+                    </button>
+
+                    {/* Botão Fogo */}
+                    <button 
+                        onClick={() => handleReact(note.id, 'fire')}
+                        className="flex items-center justify-center w-8 h-8 bg-white/50 dark:bg-zinc-800/50 hover:bg-orange-100 dark:hover:bg-orange-900/30 rounded-full transition-all active:scale-90 shadow-sm text-orange-500"
+                    >
+                      <Flame size={14} />
+                    </button>
+
+                    {/* Botão Joia */}
+                    <button 
+                        onClick={() => handleReact(note.id, 'gem')}
+                        className="flex items-center justify-center w-8 h-8 bg-white/50 dark:bg-zinc-800/50 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded-full transition-all active:scale-90 shadow-sm text-blue-500"
+                    >
+                      <Gem size={14} />
                     </button>
                   </div>
                   
@@ -143,7 +234,6 @@ const Anotacoes: React.FC = () => {
                   </button>
                 </div>
 
-                {/* Decorative Tape effect */}
                 <div className="absolute -top-3 left-1/2 -translate-x-1/2 w-16 h-8 bg-white/30 dark:bg-black/20 backdrop-blur-md rotate-2 border-x border-white/20"></div>
               </div>
             );
@@ -151,7 +241,6 @@ const Anotacoes: React.FC = () => {
         </div>
       </div>
 
-      {/* Floating Action Button */}
       <button 
         onClick={() => setIsAdding(true)}
         className="fixed bottom-28 md:bottom-8 right-8 w-16 h-16 bg-gradient-to-tr from-purple-600 via-indigo-600 to-rose-500 rounded-full flex items-center justify-center text-white shadow-2xl shadow-purple-500/40 hover:scale-110 active:scale-95 transition-all z-50 group glow-button"
@@ -159,7 +248,6 @@ const Anotacoes: React.FC = () => {
         <Plus size={32} className="group-hover:rotate-90 transition-transform duration-500" />
       </button>
 
-      {/* New Note Modal */}
       {isAdding && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-300">
           <div className="bg-white dark:bg-zinc-900 w-full max-w-lg rounded-[2.5rem] p-8 shadow-2xl animate-in zoom-in-95 duration-300 relative overflow-hidden">
@@ -205,9 +293,9 @@ const Anotacoes: React.FC = () => {
                 <div className="flex flex-wrap gap-3">
                    {noteColors.map(c => (
                      <button 
-                        key={c.class}
-                        onClick={() => setNewNote({...newNote, color: c.class})}
-                        className={`w-8 h-8 rounded-full border-2 transition-all ${c.class} ${newNote.color === c.class ? 'border-purple-600 scale-125' : 'border-transparent hover:scale-110'}`}
+                       key={c.class}
+                       onClick={() => setNewNote({...newNote, color: c.class})}
+                       className={`w-8 h-8 rounded-full border-2 transition-all ${c.class} ${newNote.color === c.class ? 'border-purple-600 scale-125' : 'border-transparent hover:scale-110'}`}
                      />
                    ))}
                 </div>
@@ -218,11 +306,11 @@ const Anotacoes: React.FC = () => {
                       <div className="flex bg-zinc-100 dark:bg-zinc-800 p-1 rounded-xl">
                          {availableAuthors.map(p => (
                            <button 
-                              key={p}
-                              onClick={() => setNewNote({...newNote, createdBy: p})}
-                              className={`px-4 py-2 rounded-lg text-xs font-black transition-all ${newNote.createdBy === p ? 'bg-white dark:bg-zinc-950 shadow-sm text-purple-600' : 'text-zinc-400'}`}
+                             key={p}
+                             onClick={() => setNewNote({...newNote, createdBy: p})}
+                             className={`px-4 py-2 rounded-lg text-xs font-black transition-all ${newNote.createdBy === p ? 'bg-white dark:bg-zinc-950 shadow-sm text-purple-600' : 'text-zinc-400'}`}
                            >
-                              {p}
+                             {p}
                            </button>
                          ))}
                       </div>
