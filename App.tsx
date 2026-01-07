@@ -229,13 +229,31 @@ const App: React.FC = () => {
   });
   const [isDarkMode, setIsDarkMode] = useState(() => { const savedTheme = localStorage.getItem('theme'); return savedTheme ? savedTheme === 'dark' : true; });
 
+  // 🔴 1. FUNÇÃO LOGOUT (Movida para cima para ser acessada pelo fetchData)
+  const logout = async () => { 
+      await supabase.auth.signOut(); 
+      setIsAuthenticated(false); 
+      localStorage.removeItem('vinnx_auth'); 
+      localStorage.removeItem('userProfile');
+      // Limpa dados sensíveis para evitar piscar dados antigos
+      setAccounts([]);
+      setTransactions([]);
+  };
+
   // --- CARREGAR DADOS ---
   const fetchData = async () => {
     try {
-        const user = (await supabase.auth.getUser()).data.user;
-        if (!user) return;
+        // 🔴 2. VERIFICAÇÃO "MATADORA DE ZUMBI"
+        // Tenta pegar o usuário. Se der erro ou vier null, chuta pra fora.
+        const { data: { user }, error: authError } = await supabase.auth.getUser();
+        
+        if (authError || !user) {
+            console.log("Sessão inválida ou usuário excluído. Fazendo logout.");
+            await logout();
+            return;
+        }
 
-        // 1. DADOS DO PERFIL (A CORREÇÃO PRINCIPAL)
+        // 1. DADOS DO PERFIL
         const { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).single();
         if (profile) {
             const newProfile = {
@@ -272,7 +290,9 @@ const App: React.FC = () => {
         const { data: projData } = await supabase.from('projects').select('*');
         if (projData) setProjects(projData as any);
 
-    } catch (error) { console.error("Erro ao carregar dados:", error); }
+    } catch (error) { 
+        console.error("Erro ao carregar dados:", error); 
+    }
   };
 
   useEffect(() => { if (isAuthenticated) fetchData(); }, [isAuthenticated]);
@@ -357,7 +377,6 @@ const App: React.FC = () => {
   };
   const markNotificationRead = (id: string) => setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
   const clearNotifications = () => setNotifications([]);
-  const logout = async () => { await supabase.auth.signOut(); setIsAuthenticated(false); localStorage.removeItem('vinnx_auth'); };
 
   if (!isAuthenticated) return <Login onLogin={() => setIsAuthenticated(true)} />;
 

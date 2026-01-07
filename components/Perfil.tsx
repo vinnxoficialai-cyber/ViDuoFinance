@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { 
-  User, Shield, Users, Moon, Sun, Camera, LogOut,
-  Plus, Palette, Check, Eye, EyeOff, UserPlus, Key, List, X
+  User, Settings, Shield, Users, Moon, Sun, Camera, Mail, Lock, Bell, LogOut,
+  ChevronRight, Plus, Palette, Tags, Trash2, Check, Eye, EyeOff, UserPlus, Key, List, X
 } from 'lucide-react';
 import { useFinance } from '../App';
 import { supabase } from '../supabaseClient';
@@ -11,7 +11,8 @@ interface PerfilProps {
   onToggleTheme: () => void;
 }
 
-// Helper component for managing a list of strings
+// --- COMPONENTES AUXILIARES (COMPLETOS) ---
+
 const StringListEditor = ({ title, items, onUpdate }: { title: string, items: string[], onUpdate: (newItems: string[]) => void }) => {
   const [newValue, setNewValue] = useState('');
   const add = () => { if (newValue.trim()) { onUpdate([...items, newValue.trim()]); setNewValue(''); } };
@@ -56,9 +57,13 @@ const KeyValueListEditor = ({ title, items, onUpdate }: { title: string, items: 
     );
 }
 
+// --- COMPONENTE PRINCIPAL PERFIL ---
+
 const Perfil: React.FC<PerfilProps> = ({ isDarkMode, onToggleTheme }) => {
   const { visibleMenus, setVisibleMenus, familyMember, setFamilyMember, userProfile, setUserProfile, logout, appSettings, setAppSettings } = useFinance();
   const [activeTab, setActiveTab] = useState<'profile' | 'settings' | 'family' | 'system'>('profile');
+  
+  // Estados de Carregamento
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
   
@@ -66,42 +71,50 @@ const Perfil: React.FC<PerfilProps> = ({ isDarkMode, onToggleTheme }) => {
   const [partnerForm, setPartnerForm] = useState({ name: '', email: '', password: '' });
   const [inviteCode, setInviteCode] = useState<string>('');
 
-  // Estados para a aba de Segurança
+  // Estado para o formulário de Segurança
   const [securityForm, setSecurityForm] = useState({
     newEmail: '',
     newPassword: '',
     confirmPassword: ''
   });
 
-  // 1. CARREGAMENTO DE DADOS
+  // 1. CARREGAMENTO DE DADOS E VÍNCULO FAMILIAR
   useEffect(() => {
     const fetchFamilyData = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
+      // Busca dados do perfil atual
       const { data: userData } = await supabase.from('profiles').select('*').eq('id', user.id).single();
       
       if (userData) {
-          if(userData.name !== userProfile.name || userData.avatar_url !== userProfile.avatar) {
-             const newProfile = { 
-                 name: userData.name || userProfile.name, 
-                 email: userData.email || userProfile.email, 
-                 avatar: userData.avatar_url || userProfile.avatar 
-             };
-             setUserProfile(newProfile);
-             localStorage.setItem('userProfile', JSON.stringify(newProfile));
-          }
+        // Atualiza dados locais se o banco estiver mais atualizado
+        if (userData.name !== userProfile.name || userData.avatar_url !== userProfile.avatar) {
+            const newProfile = { 
+                name: userData.name || userProfile.name, 
+                email: userData.email || userProfile.email, 
+                avatar: userData.avatar_url || userProfile.avatar 
+            };
+            setUserProfile(newProfile);
+            localStorage.setItem('userProfile', JSON.stringify(newProfile));
+        }
 
-          if (userData.family_id) {
+        // Lógica de Família
+        if (userData.family_id) {
+            // Busca o código de convite da família
             const { data: familyData } = await supabase.from('families').select('invite_code').eq('id', userData.family_id).single();
             if (familyData) setInviteCode(familyData.invite_code);
             
+            // Busca o parceiro (alguém na mesma família que não sou eu)
             const { data: members } = await supabase.from('profiles').select('*').eq('family_id', userData.family_id);
             const partner = members?.find((m: any) => m.email !== userData.email);
+            
             if (partner) {
                 setFamilyMember({ name: partner.name, email: partner.email, avatar: partner.avatar_url });
+            } else {
+                setFamilyMember(null); 
             }
-          }
+        }
       }
     };
     fetchFamilyData();
@@ -126,104 +139,125 @@ const Perfil: React.FC<PerfilProps> = ({ isDarkMode, onToggleTheme }) => {
     else setVisibleMenus([...visibleMenus, key]);
   };
 
+  // 2. ADICIONAR PARCEIRO (Com vínculo automático)
   const handleAddPartner = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!partnerForm.name || !partnerForm.email || !partnerForm.password) return;
+    
+    if (!inviteCode) {
+        alert("Aguarde o carregamento do código da família e tente novamente.");
+        return;
+    }
+    
     try {
-        const { error } = await supabase.auth.signUp({
+        // Envia o invite_code nos metadados para o trigger do banco vincular
+        const { data, error } = await supabase.auth.signUp({
             email: partnerForm.email,
             password: partnerForm.password,
-            options: { data: { name: partnerForm.name, invite_code: inviteCode } }
+            options: {
+                data: {
+                    name: partnerForm.name,
+                    invite_code: inviteCode
+                }
+            }
         });
+
         if (error) throw error;
-        setFamilyMember({ name: partnerForm.name, email: partnerForm.email, avatar: `https://ui-avatars.com/api/?name=${partnerForm.name}&background=random` });
+
+        // Atualiza a tela imediatamente
+        setFamilyMember({
+            name: partnerForm.name,
+            email: partnerForm.email,
+            avatar: `https://ui-avatars.com/api/?name=${partnerForm.name}&background=random`
+        });
+        
         setPartnerForm({ name: '', email: '', password: '' });
-        alert(`Conta criada para ${partnerForm.name}!`);
-    } catch (err: any) { alert("Erro: " + err.message); }
+        alert(`Conta criada para ${partnerForm.name}! O vínculo familiar foi criado.`);
+
+    } catch (err: any) {
+        alert("Erro ao criar parceiro: " + err.message);
+    }
   };
 
-  // --- LÓGICA FOTO (BASE64) ---
+  // 3. UPLOAD DE AVATAR (Base64 - Funcionando)
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    setUploading(true);
-
-    reader.onloadend = async () => {
+    if (file) {
+      if (file.type !== 'image/jpeg' && file.type !== 'image/jpg' && file.type !== 'image/png') {
+        alert("Por favor, selecione uma imagem válida.");
+        return;
+      }
+      
+      setUploading(true);
+      const reader = new FileReader();
+      
+      reader.onloadend = async () => {
         try {
-            const base64String = reader.result as string;
-            const { data: { user } } = await supabase.auth.getUser();
-            if (!user) { alert("Faça login novamente."); return; }
-
-            const { error } = await supabase
-                .from('profiles')
-                .upsert({ 
-                    id: user.id,
-                    email: user.email,
-                    avatar_url: base64String,
+            const base64 = reader.result as string;
+            
+            // Salva no Banco
+            const user = (await supabase.auth.getUser()).data.user;
+            if (user) {
+                await supabase.from('profiles').upsert({ 
+                    id: user.id, 
+                    email: user.email, 
+                    avatar_url: base64,
                     updated_at: new Date()
                 });
+            }
 
-            if (error) throw error;
-
-            const updatedProfile = { ...userProfile, avatar: base64String };
-            setUserProfile(updatedProfile);
-            localStorage.setItem('userProfile', JSON.stringify(updatedProfile));
-            alert("Foto salva com sucesso!");
-
+            // Salva Local
+            const newProfile = { ...userProfile, avatar: base64 };
+            setUserProfile(newProfile);
+            localStorage.setItem('userProfile', JSON.stringify(newProfile));
+            
+            alert("Foto atualizada!");
         } catch (error: any) {
-            console.error(error);
-            alert("Erro ao salvar: " + error.message);
+            console.error("Erro upload:", error);
+            alert("Erro ao salvar imagem.");
         } finally {
             setUploading(false);
         }
-    };
-    reader.readAsDataURL(file);
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
-  // --- LÓGICA SALVAR NOME ---
+  // 4. SALVAR PERFIL (Nome)
   const handleSaveProfile = async () => {
       try {
-        setSaving(true);
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) { alert("Você precisa estar logado."); return; }
-
-        const { error } = await supabase
-            .from('profiles')
-            .upsert({ 
-                id: user.id,
-                name: userProfile.name,
-                email: user.email,
-                updated_at: new Date()
-            });
-
-        if (error) throw error;
-
-        localStorage.setItem('userProfile', JSON.stringify(userProfile));
-        alert("Dados salvos com sucesso!");
+          setSaving(true);
+          const user = (await supabase.auth.getUser()).data.user;
+          if (user) {
+              await supabase.from('profiles').upsert({ 
+                  id: user.id, 
+                  name: userProfile.name, 
+                  email: user.email,
+                  updated_at: new Date()
+              });
+              
+              localStorage.setItem('userProfile', JSON.stringify(userProfile));
+              alert("Perfil atualizado!");
+          }
       } catch (error: any) {
-          console.error("Erro Save:", error);
           alert("Erro ao salvar: " + error.message);
       } finally {
           setSaving(false);
       }
   };
 
-  // --- NOVA LÓGICA: ATUALIZAR CREDENCIAIS (Email/Senha) ---
+  // 5. ATUALIZAR SEGURANÇA (Email/Senha)
   const handleUpdateSecurity = async () => {
     setSaving(true);
     try {
         const updates: any = {};
         let message = "";
 
-        // 1. Troca de Email
         if (securityForm.newEmail && securityForm.newEmail !== userProfile.email) {
             updates.email = securityForm.newEmail;
-            message += "• Um link de confirmação foi enviado para o novo e-mail.\n";
+            message += "• Link de confirmação enviado para o novo e-mail.\n";
         }
 
-        // 2. Troca de Senha
         if (securityForm.newPassword) {
             if (securityForm.newPassword !== securityForm.confirmPassword) {
                 alert("As senhas não coincidem!");
@@ -231,11 +265,11 @@ const Perfil: React.FC<PerfilProps> = ({ isDarkMode, onToggleTheme }) => {
                 return;
             }
             updates.password = securityForm.newPassword;
-            message += "• Senha atualizada com sucesso.\n";
+            message += "• Senha atualizada.\n";
         }
 
         if (Object.keys(updates).length === 0) {
-            alert("Preencha o e-mail ou a senha para atualizar.");
+            alert("Preencha e-mail ou senha para alterar.");
             setSaving(false);
             return;
         }
@@ -244,11 +278,11 @@ const Perfil: React.FC<PerfilProps> = ({ isDarkMode, onToggleTheme }) => {
 
         if (error) throw error;
 
-        alert("Sucesso!\n" + message);
-        setSecurityForm({ newEmail: '', newPassword: '', confirmPassword: '' }); // Limpa formulário
+        alert("Segurança atualizada!\n" + message);
+        setSecurityForm({ newEmail: '', newPassword: '', confirmPassword: '' });
 
     } catch (error: any) {
-        alert("Erro ao atualizar segurança: " + error.message);
+        alert("Erro ao atualizar: " + error.message);
     } finally {
         setSaving(false);
     }
@@ -261,8 +295,8 @@ const Perfil: React.FC<PerfilProps> = ({ isDarkMode, onToggleTheme }) => {
           <div className="flex flex-col md:flex-row items-center gap-8">
             <div className="relative group/avatar">
               <img 
-                src={userProfile.avatar || `https://ui-avatars.com/api/?name=${userProfile.name}&background=random`} 
-                className="w-32 h-32 md:w-44 md:h-44 rounded-[2.5rem] border-8 border-zinc-100 dark:border-zinc-800 object-cover shadow-2xl transition-opacity duration-300" 
+                src={userProfile.avatar} 
+                className="w-32 h-32 md:w-44 md:h-44 rounded-[2.5rem] border-8 border-zinc-100 dark:border-zinc-800 object-cover shadow-2xl transition-opacity" 
                 style={{ opacity: uploading ? 0.5 : 1 }}
                 alt="Profile" 
               />
@@ -304,6 +338,7 @@ const Perfil: React.FC<PerfilProps> = ({ isDarkMode, onToggleTheme }) => {
       </div>
 
       <div className="w-full space-y-6">
+        {/* ABA PERFIL */}
         {activeTab === 'profile' && (
           <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-10 md:p-12 rounded-[3rem] space-y-10 shadow-sm">
             <div className="flex justify-between items-center">
@@ -315,7 +350,7 @@ const Perfil: React.FC<PerfilProps> = ({ isDarkMode, onToggleTheme }) => {
                  <input type="text" value={userProfile.name} onChange={(e) => setUserProfile({...userProfile, name: e.target.value})} className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-2xl px-6 py-4 text-sm font-bold focus:outline-none focus:ring-4 focus:ring-purple-600/10 transition-all" />
               </div>
               <div className="space-y-2">
-                 <label className="text-[10px] font-black text-zinc-400 uppercase tracking-widest ml-2">Email de Acesso</label>
+                 <label className="text-[10px] font-black text-zinc-400 uppercase tracking-widest ml-2">Email de Acesso (Leitura)</label>
                  <input type="email" disabled value={userProfile.email} className="w-full bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl px-6 py-4 text-sm font-bold text-zinc-500 cursor-not-allowed" />
               </div>
             </div>
@@ -327,13 +362,14 @@ const Perfil: React.FC<PerfilProps> = ({ isDarkMode, onToggleTheme }) => {
           </div>
         )}
 
-        {/* ... (Manter abas Family e System iguais) ... */}
+        {/* ABA FAMÍLIA (ATUALIZADA) */}
         {activeTab === 'family' && (
           <div className="space-y-6">
             <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-10 md:p-12 rounded-[3rem] space-y-10 shadow-sm">
               <h3 className="text-xl font-black uppercase tracking-tighter flex items-center gap-4"><Users size={24} className="text-purple-600" /> Membros da Família</h3>
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                {/* Current Member */}
                 <div className="flex items-center justify-between p-6 bg-zinc-50 dark:bg-zinc-950 rounded-[2rem] border border-zinc-100 dark:border-zinc-800">
                   <div className="flex items-center gap-5">
                     <img src={userProfile.avatar} className="w-14 h-14 rounded-2xl object-cover shadow-lg" />
@@ -345,10 +381,11 @@ const Perfil: React.FC<PerfilProps> = ({ isDarkMode, onToggleTheme }) => {
                   <span className="px-4 py-1.5 bg-emerald-500/10 text-emerald-600 text-[10px] font-black uppercase rounded-full">Sessão Ativa</span>
                 </div>
 
+                {/* Family Member */}
                 {familyMember ? (
                   <div className="flex items-center justify-between p-6 bg-zinc-50 dark:bg-zinc-950 rounded-[2rem] border border-zinc-100 dark:border-zinc-800 group">
                     <div className="flex items-center gap-5">
-                      <img src={familyMember.avatar} className="w-14 h-14 rounded-2xl object-cover shadow-lg" />
+                      <img src={familyMember.avatar || `https://ui-avatars.com/api/?name=${familyMember.name}&background=random`} className="w-14 h-14 rounded-2xl object-cover shadow-lg" />
                       <div>
                         <p className="text-base font-black">{familyMember.name}</p>
                         <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest">{familyMember.email}</p>
@@ -402,6 +439,7 @@ const Perfil: React.FC<PerfilProps> = ({ isDarkMode, onToggleTheme }) => {
           </div>
         )}
 
+        {/* ABA SISTEMA */}
         {activeTab === 'system' && (
           <div className="space-y-6">
             <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-10 md:p-12 rounded-[3rem] space-y-10 shadow-sm">
@@ -423,6 +461,7 @@ const Perfil: React.FC<PerfilProps> = ({ isDarkMode, onToggleTheme }) => {
                 </button>
               </div>
 
+              {/* LIST CONFIGURATIONS */}
               <div className="space-y-8">
                 <div className="flex items-center gap-3 mb-6">
                   <List className="text-purple-600" size={20} />
@@ -454,7 +493,7 @@ const Perfil: React.FC<PerfilProps> = ({ isDarkMode, onToggleTheme }) => {
           </div>
         )}
 
-        {/* --- ABA SEGURANÇA CORRIGIDA --- */}
+        {/* ABA SEGURANÇA (CORRIGIDA: TELA PRETA RESOLVIDA) */}
         {activeTab === 'settings' && (
            <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-10 md:p-12 rounded-[3rem] space-y-10 shadow-sm">
               <h3 className="text-xl font-black uppercase tracking-tighter flex items-center gap-4"><Shield size={24} className="text-purple-600" /> Segurança da Conta</h3>
@@ -468,7 +507,6 @@ const Perfil: React.FC<PerfilProps> = ({ isDarkMode, onToggleTheme }) => {
                   <div className="space-y-6">
                     <div className="space-y-2">
                       <label className="text-[10px] font-black uppercase text-zinc-400 tracking-widest ml-2">Novo E-mail</label>
-                      {/* INPUT DE E-MAIL AGORA É EDITÁVEL */}
                       <input 
                         type="email" 
                         placeholder="Ex: novo@email.com" 
@@ -477,8 +515,6 @@ const Perfil: React.FC<PerfilProps> = ({ isDarkMode, onToggleTheme }) => {
                         className="w-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl px-6 py-4 text-sm font-bold focus:outline-none focus:ring-4 focus:ring-purple-600/10 transition-all shadow-inner" 
                       />
                     </div>
-                    
-                    {/* Campos de Senha Opcionais */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       <div className="space-y-2">
                         <label className="text-[10px] font-black uppercase text-zinc-400 tracking-widest ml-2">Nova Senha</label>
@@ -501,7 +537,6 @@ const Perfil: React.FC<PerfilProps> = ({ isDarkMode, onToggleTheme }) => {
                         />
                       </div>
                     </div>
-                    
                     <button 
                         onClick={handleUpdateSecurity}
                         disabled={saving}
