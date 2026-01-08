@@ -1,7 +1,7 @@
 // src/hooks/useWishlist.ts
 import { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase'; // Certifique-se que o arquivo supabase.ts existe em src/lib/
-import { WishlistItem } from '../types';
+import { supabase } from '../../lib/supabase'; // Certifique-se que o arquivo supabase.ts existe em src/lib/
+import { WishlistItem } from '../../types';
 
 export function useWishlist() {
   const [items, setItems] = useState<WishlistItem[]>([]);
