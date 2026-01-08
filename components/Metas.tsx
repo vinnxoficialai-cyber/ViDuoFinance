@@ -1,11 +1,25 @@
-import React, { useState, useEffect } from 'react';
-import { Plus, Calendar, X, Sparkles, Rocket, Star, Trophy, DollarSign, ArrowRight, Pencil, Trash2 } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import { 
+  Plus, 
+  Calendar, 
+  X, 
+  Sparkles, 
+  Rocket, 
+  Star, 
+  Trophy, 
+  DollarSign, 
+  ArrowRight, 
+  Pencil, 
+  Trash2,
+  Camera 
+} from 'lucide-react';
 import { Goal } from '../types';
 import { useFinance } from '../App';
+import { useGoals } from '../hooks/useGoals'; // Hook do Supabase
+import { supabase } from '../lib/supabase'; // Para atualizações diretas (Aportes/Edição)
 
 /**
  * Falling Confetti Animation
- * Simulates colorful paper falling from the top of the screen for 5 seconds.
  */
 const fireFallingConfetti = () => {
   const container = document.createElement('div');
@@ -22,7 +36,6 @@ const fireFallingConfetti = () => {
   for (let i = 0; i < particleCount; i++) {
     const particle = document.createElement('div');
     particle.style.position = 'absolute';
-    // Random size for "paper" look
     const width = 6 + Math.random() * 8;
     const height = 10 + Math.random() * 10;
     particle.style.width = `${width}px`;
@@ -30,7 +43,6 @@ const fireFallingConfetti = () => {
     particle.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
     particle.style.borderRadius = '2px';
     
-    // Random starting position above the viewport
     const startX = Math.random() * 100;
     const startY = -(Math.random() * 100 + 20);
     particle.style.left = `${startX}%`;
@@ -41,7 +53,6 @@ const fireFallingConfetti = () => {
     const rotation = Math.random() * 360;
     const swingRange = 20 + Math.random() * 30;
 
-    // Animation via Web Animations API
     particle.animate([
       { transform: `translateY(0) rotate(${rotation}deg) translateX(0)`, opacity: 1 },
       { transform: `translateY(${window.innerHeight + 100}px) rotate(${rotation + 720}deg) translateX(${swingRange}px)`, opacity: 0 }
@@ -55,26 +66,34 @@ const fireFallingConfetti = () => {
     container.appendChild(particle);
   }
 
-  // Cleanup after 5 seconds of the actual "show"
   setTimeout(() => {
     container.remove();
   }, 6000);
 };
 
 const Metas: React.FC = () => {
-  const { accounts, addTransaction, goals, setGoals } = useFinance();
+  // Hooks
+  const { accounts, addTransaction } = useFinance(); // Mantemos accounts e transactions do contexto global
+  const { items: goals, loading, addItem, deleteItem, refresh } = useGoals(); // Goals vêm do Supabase
+  
+  // States
   const [showAddForm, setShowAddForm] = useState(false);
   const [depositingGoalId, setDepositingGoalId] = useState<string | null>(null);
   const [depositAmount, setDepositAmount] = useState('');
   const [selectedAccountId, setSelectedAccountId] = useState(accounts[0]?.id || '');
   const [editingGoal, setEditingGoal] = useState<Goal | null>(null);
+  
+  // Image Upload State
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [newGoal, setNewGoal] = useState<Partial<Goal>>({
     title: '',
     target: 0,
     current: 0,
     deadline: new Date().toISOString().split('T')[0],
-    color: 'from-purple-400 to-indigo-600'
+    color: 'from-purple-500 to-indigo-600',
+    imageUrl: ''
   });
 
   const availableColors = [
@@ -93,7 +112,8 @@ const Metas: React.FC = () => {
       target: goal.target,
       current: goal.current,
       deadline: goal.deadline,
-      color: goal.color
+      color: goal.color,
+      imageUrl: goal.imageUrl
     });
     setShowAddForm(true);
   };
@@ -101,68 +121,115 @@ const Metas: React.FC = () => {
   const resetForm = () => {
     setShowAddForm(false);
     setEditingGoal(null);
-    setNewGoal({ title: '', target: 0, current: 0, deadline: new Date().toISOString().split('T')[0], color: availableColors[0] });
+    setSelectedFile(null);
+    setNewGoal({ 
+      title: '', 
+      target: 0, 
+      current: 0, 
+      deadline: new Date().toISOString().split('T')[0], 
+      color: availableColors[0],
+      imageUrl: ''
+    });
   };
 
-  const handleSaveGoal = (e: React.FormEvent) => {
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setSelectedFile(file);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setNewGoal(prev => ({ ...prev, imageUrl: reader.result as string }));
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleSaveGoal = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newGoal.title || !newGoal.target) return;
 
     if (editingGoal) {
-      setGoals(goals.map(g => g.id === editingGoal.id ? {
-        ...g,
-        title: newGoal.title!,
-        target: Number(newGoal.target),
-        current: Number(newGoal.current),
-        deadline: newGoal.deadline!,
-        color: newGoal.color!
-      } : g));
+      // EDIT MODE (Atualização direta no Supabase para garantir funcionamento sem hook de update complexo)
+      try {
+        const updates: any = {
+          name: newGoal.title,
+          price: Number(newGoal.target),
+          target_month: newGoal.deadline,
+          category: newGoal.color, // Usando o campo category para guardar a cor/gradiente
+          // Se tiver lógica de upload de imagem na edição, precisaria ser feita aqui
+        };
+
+        const { error } = await supabase
+          .from('goals')
+          .update(updates)
+          .eq('id', editingGoal.id);
+
+        if (error) throw error;
+        await refresh();
+      } catch (error) {
+        console.error("Erro ao atualizar:", error);
+      }
     } else {
-      const goal: Goal = {
-        id: Math.random().toString(36).substr(2, 9),
-        title: newGoal.title || 'Novo Sonho',
-        target: Number(newGoal.target) || 0,
-        current: Number(newGoal.current) || 0,
-        deadline: newGoal.deadline || new Date().toISOString().split('T')[0],
-        color: newGoal.color || availableColors[0]
-      };
-      setGoals([goal, ...goals]);
+      // CREATE MODE (Usa o hook padrão)
+      await addItem({
+        name: newGoal.title!,
+        price: Number(newGoal.target),
+        savedAmount: Number(newGoal.current) || 0,
+        imageUrl: '', // Hook gerencia isso
+        priority: 3,
+        category: newGoal.color, // Guardando a cor na categoria
+        viability: 'green',
+        targetMonth: newGoal.deadline
+      }, selectedFile || undefined);
     }
     resetForm();
   };
 
-  const handleDeposit = () => {
+  const handleDeposit = async () => {
     if (!depositingGoalId || !depositAmount) return;
     const amount = Number(depositAmount);
     const account = accounts.find(a => a.id === selectedAccountId);
-    if (!account) return;
-
-    // Update global transactions via shared state
     const goal = goals.find(g => g.id === depositingGoalId);
-    addTransaction({
-      description: `Investimento: ${goal?.title}`,
-      amount: amount,
-      type: 'expense',
-      category: 'Metas',
-      date: new Date().toISOString().split('T')[0],
-      account: account.name,
-      status: 'paid'
-    });
+    
+    if (!account || !goal) return;
 
-    // Update local goals state
-    setGoals(prev => prev.map(g => 
-      g.id === depositingGoalId ? { ...g, current: g.current + amount } : g
-    ));
+    try {
+      // 1. Atualizar saldo da Meta no Supabase
+      const newAmount = (goal.current || 0) + amount;
+      
+      const { error: updateError } = await supabase
+        .from('goals')
+        .update({ saved_amount: newAmount })
+        .eq('id', depositingGoalId);
 
-    // Celebration!
-    fireFallingConfetti();
-    setDepositingGoalId(null);
-    setDepositAmount('');
+      if (updateError) throw updateError;
+
+      // 2. Adicionar transação global (Contexto)
+      addTransaction({
+        description: `Investimento: ${goal.name}`,
+        amount: amount,
+        type: 'expense',
+        category: 'Metas',
+        date: new Date().toISOString().split('T')[0],
+        account: account.name,
+        status: 'paid'
+      });
+
+      // 3. Feedback visual
+      fireFallingConfetti();
+      await refresh(); // Recarrega dados do banco
+      setDepositingGoalId(null);
+      setDepositAmount('');
+
+    } catch (error) {
+      console.error("Erro no aporte:", error);
+      alert("Erro ao processar investimento.");
+    }
   };
 
-  const deleteGoal = () => {
+  const handleDelete = async () => {
     if (editingGoal) {
-      setGoals(prevGoals => prevGoals.filter(g => g.id !== editingGoal.id));
+      await deleteItem(editingGoal.id);
       resetForm();
     }
   };
@@ -176,9 +243,20 @@ const Metas: React.FC = () => {
     return "Um novo sonho começa aqui. Planejamento é tudo!";
   };
 
+  // Mapeamento de dados do Banco para o formato visual antigo
+  const displayGoals = goals.map(g => ({
+    ...g,
+    title: g.name,
+    target: g.price,
+    current: g.savedAmount || 0,
+    deadline: g.targetMonth || new Date().toISOString(),
+    color: g.category || availableColors[0], // Usamos category para guardar a cor
+    imageUrl: g.imageUrl
+  }));
+
   return (
     <div className="space-y-10 animate-in fade-in slide-in-from-bottom-6 duration-700 pb-20">
-      {/* Header section with Poppins font */}
+      {/* Header section */}
       <div className="flex flex-col md:flex-row justify-between items-center gap-6 px-4 md:px-0">
         <div className="text-center md:text-left">
           <h2 className="text-3xl md:text-4xl font-black font-display tracking-tight text-zinc-800 dark:text-white flex items-center justify-center md:justify-start gap-3">
@@ -190,29 +268,63 @@ const Metas: React.FC = () => {
           onClick={() => setShowAddForm(true)}
           className="flex items-center gap-3 bg-purple-600 text-white px-10 py-5 rounded-[2.5rem] text-xs font-black uppercase tracking-widest hover:scale-105 shadow-2xl shadow-purple-500/30 transition-all active:scale-95 group w-full md:w-auto justify-center"
         >
-          <Plus size={22} className="group-hover:rotate-90 transition-transform" /> Adicionar Meta
+          {loading ? 'Carregando...' : (
+            <><Plus size={22} className="group-hover:rotate-90 transition-transform" /> Adicionar Meta</>
+          )}
         </button>
       </div>
 
       {/* New/Edit Goal Modal */}
       {showAddForm && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-300">
-          <div className="bg-white dark:bg-zinc-900 w-full max-w-2xl rounded-[3rem] p-10 shadow-2xl animate-in zoom-in-95 duration-300 relative overflow-hidden border border-zinc-200 dark:border-zinc-800">
-             <div className="flex justify-between items-center mb-10">
+          <div className="bg-white dark:bg-zinc-900 w-full max-w-2xl rounded-[3rem] p-8 md:p-10 shadow-2xl animate-in zoom-in-95 duration-300 relative overflow-y-auto max-h-[95vh] scrollbar-hide border border-zinc-200 dark:border-zinc-800">
+             <div className="flex justify-between items-center mb-8">
                 <div className="flex items-center gap-4">
                   <div className="p-3 bg-purple-100 dark:bg-purple-900/40 rounded-2xl text-purple-600"><Sparkles size={28} /></div>
-                  <h3 className="text-2xl font-black font-display uppercase tracking-tighter">{editingGoal ? 'EDITAR META' : 'PROJETAR NOVO SONHO'}</h3>
+                  <h3 className="text-2xl font-black font-display uppercase tracking-tighter text-zinc-900 dark:text-white">
+                    {editingGoal ? 'EDITAR META' : 'PROJETAR NOVO SONHO'}
+                  </h3>
                 </div>
-                <button onClick={resetForm} className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full transition-colors"><X size={32} /></button>
+                <button onClick={resetForm} className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full transition-colors"><X size={32} className="text-zinc-500" /></button>
              </div>
 
              <form onSubmit={handleSaveGoal} className="space-y-8">
+                {/* IMAGE UPLOAD AREA */}
+                <div 
+                  className="relative h-48 w-full rounded-[2.5rem] border-2 border-dashed border-zinc-300 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 flex flex-col items-center justify-center overflow-hidden cursor-pointer hover:border-purple-500 transition-all group"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  {newGoal.imageUrl ? (
+                    <>
+                      <img src={newGoal.imageUrl} className="w-full h-full object-cover opacity-80 group-hover:opacity-60 transition-opacity" alt="Preview" />
+                      <div className="absolute inset-0 flex flex-col items-center justify-center">
+                         <Camera size={32} className="text-white drop-shadow-md mb-2" />
+                         <span className="text-[10px] font-black uppercase tracking-widest text-white drop-shadow-md">Alterar Capa</span>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="w-14 h-14 bg-zinc-200 dark:bg-zinc-800 rounded-2xl flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                         <Camera size={24} className="text-zinc-400" />
+                      </div>
+                      <span className="text-[10px] font-black uppercase tracking-widest text-zinc-400 group-hover:text-purple-500">Adicionar Foto de Capa (Opcional)</span>
+                    </>
+                  )}
+                  <input 
+                    type="file" 
+                    ref={fileInputRef} 
+                    onChange={handleImageUpload} 
+                    className="hidden" 
+                    accept="image/jpeg,image/png,image/webp" 
+                  />
+                </div>
+
                 <div className="space-y-2">
                   <label className="text-[10px] font-black uppercase text-zinc-400 tracking-widest ml-1">O que vamos conquistar?</label>
                   <input 
                     required
                     placeholder="Ex: Reforma da Sala de Estar" 
-                    className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-[2rem] p-5 text-lg font-bold focus:outline-none focus:ring-4 focus:ring-purple-600/10 transition-all"
+                    className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-[2rem] p-5 text-lg font-bold focus:outline-none focus:ring-4 focus:ring-purple-600/10 transition-all text-zinc-900 dark:text-white"
                     value={newGoal.title}
                     onChange={e => setNewGoal({...newGoal, title: e.target.value})}
                   />
@@ -235,7 +347,7 @@ const Metas: React.FC = () => {
                     <input 
                       required
                       type="date"
-                      className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-[2rem] p-5 text-sm font-bold focus:outline-none focus:ring-4 focus:ring-purple-600/10 transition-all"
+                      className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-[2rem] p-5 text-sm font-bold focus:outline-none focus:ring-4 focus:ring-purple-600/10 transition-all text-zinc-900 dark:text-white"
                       value={newGoal.deadline}
                       onChange={e => setNewGoal({...newGoal, deadline: e.target.value})}
                     />
@@ -243,7 +355,7 @@ const Metas: React.FC = () => {
                 </div>
 
                 <div className="space-y-3">
-                   <label className="text-[10px] font-black uppercase text-zinc-400 tracking-widest ml-1">Vibe da Conquista</label>
+                   <label className="text-[10px] font-black uppercase text-zinc-400 tracking-widest ml-1">Vibe da Conquista (Cor do Card)</label>
                    <div className="flex flex-wrap gap-5">
                       {availableColors.map(c => (
                         <button 
@@ -258,15 +370,15 @@ const Metas: React.FC = () => {
 
                 <div className="flex justify-between items-center pt-8 border-t border-zinc-100 dark:border-zinc-800">
                   {editingGoal ? (
-                    <button type="button" onClick={deleteGoal} className="px-6 py-5 text-xs font-black uppercase tracking-widest text-rose-500 hover:bg-rose-500/10 rounded-[2rem] transition-colors flex items-center gap-2">
+                    <button type="button" onClick={handleDelete} className="px-6 py-5 text-xs font-black uppercase tracking-widest text-rose-500 hover:bg-rose-500/10 rounded-[2rem] transition-colors flex items-center gap-2">
                       <Trash2 size={16} /> EXCLUIR
                     </button>
                   ) : <div></div>}
                   
                   <div className="flex gap-4">
                     <button type="button" onClick={resetForm} className="px-8 py-5 text-xs font-black uppercase tracking-widest text-zinc-400 hover:text-zinc-600 transition-colors">CANCELAR</button>
-                    <button type="submit" className="px-12 py-5 bg-purple-600 text-white rounded-[2rem] text-xs font-black uppercase tracking-widest shadow-2xl shadow-purple-500/30 active:scale-95 transition-all">
-                      {editingGoal ? 'ATUALIZAR META' : 'SALVAR META'}
+                    <button type="submit" disabled={loading} className="px-12 py-5 bg-purple-600 text-white rounded-[2rem] text-xs font-black uppercase tracking-widest shadow-2xl shadow-purple-500/30 active:scale-95 transition-all disabled:opacity-50">
+                      {loading ? 'SALVANDO...' : (editingGoal ? 'ATUALIZAR' : 'CRIAR SONHO')}
                     </button>
                   </div>
                 </div>
@@ -280,8 +392,8 @@ const Metas: React.FC = () => {
         <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/90 backdrop-blur-xl animate-in fade-in duration-300">
           <div className="bg-white dark:bg-zinc-900 w-full max-w-md rounded-[3rem] p-10 shadow-3xl animate-in zoom-in-95 duration-300 border border-white/10">
              <div className="flex justify-between items-center mb-10">
-                <h3 className="text-xl font-black font-display uppercase tracking-tighter">Aporte no Sonho</h3>
-                <button onClick={() => setDepositingGoalId(null)} className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full"><X size={28} /></button>
+                <h3 className="text-xl font-black font-display uppercase tracking-tighter text-zinc-900 dark:text-white">Aporte no Sonho</h3>
+                <button onClick={() => setDepositingGoalId(null)} className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full"><X size={28} className="text-zinc-500" /></button>
              </div>
              <div className="space-y-8">
                 <div className="space-y-2">
@@ -301,7 +413,7 @@ const Metas: React.FC = () => {
                 <div className="space-y-2">
                    <label className="text-[10px] font-black uppercase text-zinc-400 tracking-widest ml-1">Utilizar saldo de qual conta?</label>
                    <select 
-                      className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-[2rem] p-5 text-sm font-bold focus:outline-none focus:ring-4 focus:ring-purple-600/10"
+                      className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-[2rem] p-5 text-sm font-bold focus:outline-none focus:ring-4 focus:ring-purple-600/10 text-zinc-900 dark:text-white"
                       value={selectedAccountId}
                       onChange={e => setSelectedAccountId(e.target.value)}
                    >
@@ -321,16 +433,25 @@ const Metas: React.FC = () => {
 
       {/* Grid of Achievement Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 px-4 md:px-0">
-        {goals.map((goal) => {
+        {displayGoals.map((goal) => {
           const progress = Math.min((goal.current / goal.target) * 100, 100);
           
           return (
             <div 
               key={goal.id} 
-              className={`relative bg-gradient-to-br ${goal.color} rounded-[3.5rem] p-10 shadow-2xl transition-all duration-500 group overflow-hidden border border-white/20`}
+              className={`relative rounded-[3.5rem] p-10 shadow-2xl transition-all duration-500 group overflow-hidden border border-white/20 bg-gradient-to-br ${!goal.imageUrl ? goal.color : 'from-zinc-900 to-black'}`}
             >
-              {/* Soft background glow */}
-              <div className="absolute -top-12 -right-12 w-40 h-40 bg-white/10 rounded-full blur-3xl group-hover:scale-150 transition-transform duration-1000"></div>
+              {/* Background Image Logic */}
+              {goal.imageUrl ? (
+                <>
+                  <div className="absolute inset-0 z-0">
+                    <img src={goal.imageUrl} className="w-full h-full object-cover opacity-60 group-hover:scale-110 transition-transform duration-1000" alt="Background" />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent"></div>
+                  </div>
+                </>
+              ) : (
+                <div className="absolute -top-12 -right-12 w-40 h-40 bg-white/10 rounded-full blur-3xl group-hover:scale-150 transition-transform duration-1000"></div>
+              )}
               
               <div className="flex flex-col h-full space-y-8 relative z-10">
                 <div className="flex justify-between items-start">
@@ -343,7 +464,7 @@ const Metas: React.FC = () => {
                   </div>
                   <button 
                     onClick={() => handleOpenEdit(goal)}
-                    className="p-3 bg-white/10 hover:bg-white/30 rounded-2xl text-white transition-all active:scale-90 shadow-lg"
+                    className="p-3 bg-white/10 hover:bg-white/30 rounded-2xl text-white transition-all active:scale-90 shadow-lg backdrop-blur-md"
                   >
                     <Pencil size={16} />
                   </button>
@@ -362,17 +483,15 @@ const Metas: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Suculenta Progress Bar with Moving Icon at the tip */}
+                  {/* Suculenta Progress Bar */}
                   <div className="relative pt-8 pb-4">
-                    <div className="h-10 w-full bg-black/15 rounded-full overflow-hidden p-1.5 backdrop-blur-md shadow-[inset_0_2px_4px_rgba(0,0,0,0.1)]">
+                    <div className="h-10 w-full bg-black/30 rounded-full overflow-hidden p-1.5 backdrop-blur-md shadow-[inset_0_2px_4px_rgba(0,0,0,0.2)]">
                       <div 
                         className="h-full bg-white rounded-full transition-all duration-1500 ease-out shadow-[0_4px_12px_rgba(255,255,255,0.3)] relative min-w-[36px]" 
                         style={{ width: `${progress}%` }}
                       >
-                         {/* Animated shine effect */}
                          <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/40 to-transparent w-full animate-[pulse_3s_infinite]"></div>
                          
-                         {/* Dynamic Icon at the progress tip */}
                          <div className="absolute -right-4 -top-10 transition-transform duration-300">
                             {progress >= 100 ? (
                               <div className="bg-amber-400 p-2 rounded-xl shadow-xl animate-bounce">
@@ -391,9 +510,8 @@ const Metas: React.FC = () => {
                       </div>
                     </div>
                     
-                    {/* Progress percentage overlay */}
                     <div className="flex justify-end mt-2">
-                       <span className="text-xl font-black text-white">{progress.toFixed(0)}%</span>
+                       <span className="text-xl font-black text-white drop-shadow-md">{progress.toFixed(0)}%</span>
                     </div>
                   </div>
 
@@ -416,7 +534,7 @@ const Metas: React.FC = () => {
 
                 {/* VinnxAI Integrated Insight */}
                 <div className="mt-4">
-                  <div className="bg-black/10 backdrop-blur-md border border-white/10 p-5 rounded-[2.5rem] flex items-start gap-4 group-hover:bg-black/20 transition-all">
+                  <div className="bg-black/40 backdrop-blur-md border border-white/10 p-5 rounded-[2.5rem] flex items-start gap-4 group-hover:bg-black/50 transition-all">
                     <div className="w-10 h-10 bg-white/20 rounded-2xl flex items-center justify-center text-white shrink-0 shadow-inner">
                        <Sparkles size={18} />
                     </div>
