@@ -52,6 +52,7 @@ const Projetos: React.FC = () => {
     fetchProjects();
   }, []);
 
+ // --- VERSÃO CORRIGIDA DO FETCH ---
   const fetchProjects = async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -65,17 +66,20 @@ const Projetos: React.FC = () => {
 
       if (error) throw error;
 
+      console.log("PROJETOS VINDOS DO BANCO:", data); // <--- ISSO VAI AJUDAR A VER O ERRO (Aperte F12)
+
       if (data) {
         const formattedProjects: Project[] = data.map(item => ({
           id: item.id,
           title: item.title,
           description: item.description,
           status: item.status,
-          targetValue: Number(item.budget || 0), // Mapeia 'budget' do banco
-          currentValue: Number(item.spent || 0),   // Mapeia 'spent' do banco
-          monthlySavings: 0, 
+          targetValue: Number(item.budget || 0),
+          currentValue: Number(item.spent || 0),
+          monthlySavings: 0,
           deadline: item.deadline,
-          imageUrl: item.image_url, 
+          // Tenta ler de image_url (padrão) ou imageUrl (caso tenha criado diferente)
+          imageUrl: item.image_url || item.imageUrl || null, 
           contributions: [] 
         }));
         setProjects(formattedProjects);
