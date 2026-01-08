@@ -1,5 +1,4 @@
-
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { 
   Plus, 
   ExternalLink, 
@@ -14,17 +13,22 @@ import {
   TrendingUp,
   Image as ImageIcon,
   History,
-  ChevronRight
+  Loader2
 } from 'lucide-react';
-import { Project, BankAccount } from '../types';
+import { Project } from '../types';
 import { useFinance } from '../App';
+import { supabase } from '../lib/supabase'; // Certifique-se que o caminho está certo
 
 const Projetos: React.FC = () => {
   const { accounts, addTransaction, projects, setProjects } = useFinance();
   const [isAdding, setIsAdding] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const [viewingProject, setViewingProject] = useState<Project | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
+  // Estado para o arquivo de imagem real (para upload)
+  const [imageFile, setImageFile] = useState<File | null>(null);
+
   const [newProj, setNewProj] = useState({ 
     title: '', 
     description: '', 
@@ -43,34 +47,115 @@ const Projetos: React.FC = () => {
 
   const [imagePreview, setImagePreview] = useState<string | null>(null);
 
+  // --- 1. CARREGAR PROJETOS DO BANCO ---
+  useEffect(() => {
+    fetchProjects();
+  }, []);
+
+  const fetchProjects = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { data, error } = await supabase
+        .from('projects')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      if (data) {
+        const formattedProjects: Project[] = data.map(item => ({
+          id: item.id,
+          title: item.title,
+          description: item.description,
+          status: item.status,
+          targetValue: Number(item.budget || 0), // Mapeia 'budget' do banco
+          currentValue: Number(item.spent || 0),   // Mapeia 'spent' do banco
+          monthlySavings: 0, 
+          deadline: item.deadline,
+          imageUrl: item.image_url, 
+          contributions: [] 
+        }));
+        setProjects(formattedProjects);
+      }
+    } catch (error) {
+      console.error("Erro ao buscar projetos:", error);
+    }
+  };
+
+  // --- 2. UPLOAD E SALVAR NO BANCO ---
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      setImageFile(file); // Guarda o arquivo para upload
       const reader = new FileReader();
       reader.onloadend = () => {
-        setImagePreview(reader.result as string);
-        setNewProj(prev => ({ ...prev, imageUrl: reader.result as string }));
+        setImagePreview(reader.result as string); // Mostra preview local
       };
       reader.readAsDataURL(file);
     }
   };
 
-  const addProject = () => {
+  const addProject = async () => {
     if (!newProj.title.trim()) return;
-    const p: Project = {
-      id: Math.random().toString(36).substr(2, 9),
-      title: newProj.title,
-      description: newProj.description,
-      status: newProj.status,
-      targetValue: Number(newProj.targetValue) || 0,
-      currentValue: Number(newProj.currentValue) || 0,
-      monthlySavings: Number(newProj.monthlySavings) || 0,
-      deadline: newProj.deadline || new Date().toISOString().split('T')[0],
-      imageUrl: imagePreview || `https://picsum.photos/seed/${Math.random()}/800/400`,
-      contributions: []
-    };
-    setProjects([p, ...projects]);
-    resetForm();
+    setIsLoading(true);
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Usuário não logado");
+
+      let finalImageUrl = null;
+
+      // 1. Faz Upload da Imagem se existir
+      if (imageFile) {
+        const fileExt = imageFile.name.split('.').pop();
+        const fileName = `${user.id}/${Math.random()}.${fileExt}`;
+        
+        const { error: uploadError } = await supabase.storage
+          .from('images')
+          .upload(fileName, imageFile);
+
+        if (uploadError) throw uploadError;
+
+        // Pega a URL pública
+        const { data: publicUrlData } = supabase.storage
+          .from('images')
+          .getPublicUrl(fileName);
+          
+        finalImageUrl = publicUrlData.publicUrl;
+      }
+
+      // 2. Salva no Banco de Dados
+      const projectData = {
+        user_id: user.id,
+        title: newProj.title,
+        description: newProj.description,
+        status: newProj.status,
+        budget: Number(newProj.targetValue) || 0,
+        spent: Number(newProj.currentValue) || 0,
+        deadline: newProj.deadline || null,
+        image_url: finalImageUrl || newProj.imageUrl
+      };
+
+      const { data, error } = await supabase
+        .from('projects')
+        .insert([projectData])
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      // 3. Atualiza UI
+      await fetchProjects();
+      resetForm();
+
+    } catch (error: any) {
+      alert("Erro ao salvar: " + error.message);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const resetForm = () => {
@@ -85,54 +170,66 @@ const Projetos: React.FC = () => {
       imageUrl: '' 
     });
     setImagePreview(null);
+    setImageFile(null);
     setIsAdding(false);
   };
 
-  const handleAddContribution = () => {
+  // --- 3. CONTRIBUIÇÃO (SALVAR TRANSAÇÃO + ATUALIZAR PROJETO) ---
+  const handleAddContribution = async () => {
     if (!viewingProject || !contribution.amount) return;
     
     const account = accounts.find(a => a.id === contribution.accountId);
     if (!account) return;
-
     const amountNum = Number(contribution.amount);
 
-    // Create a transaction globally
-    addTransaction({
-      description: `Investimento: ${viewingProject.title}`,
-      amount: amountNum,
-      type: 'expense',
-      category: 'Investimentos',
-      date: new Date().toISOString().split('T')[0],
-      account: account.name,
-      status: 'paid'
-    });
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
 
-    // Update project state globally
-    const updatedProjects = projects.map(p => {
-      if (p.id === viewingProject.id) {
-        const newContribution = {
-          id: Math.random().toString(36).substr(2, 9),
-          date: new Date().toISOString().split('T')[0],
-          amount: amountNum,
-          accountName: account.name
-        };
-        const updated = {
-          ...p,
-          currentValue: (p.currentValue || 0) + amountNum,
-          contributions: [newContribution, ...(p.contributions || [])]
-        };
-        setViewingProject(updated);
-        return updated;
-      }
-      return p;
-    });
+      // 1. Cria a transação de despesa/investimento
+      await addTransaction({
+        description: `Investimento: ${viewingProject.title}`,
+        amount: amountNum,
+        type: 'expense',
+        category: 'Investimentos',
+        date: new Date().toISOString().split('T')[0],
+        account: account.name,
+        status: 'paid'
+      });
 
-    setProjects(updatedProjects);
-    setContribution({ ...contribution, amount: '' });
+      // 2. Atualiza o valor gasto no projeto
+      const newSpent = (viewingProject.currentValue || 0) + amountNum;
+      
+      const { error } = await supabase
+        .from('projects')
+        .update({ spent: newSpent })
+        .eq('id', viewingProject.id);
+
+      if (error) throw error;
+
+      // 3. Atualiza tela
+      await fetchProjects();
+      
+      // Atualiza o modal aberto
+      setViewingProject(prev => prev ? ({...prev, currentValue: newSpent}) : null);
+      setContribution({ ...contribution, amount: '' });
+      alert("Aporte realizado com sucesso!");
+
+    } catch (error: any) {
+      alert("Erro ao realizar aporte: " + error.message);
+    }
   };
 
-  const deleteProject = (id: string) => {
-    setProjects(projects.filter(p => p.id !== id));
+  const deleteProject = async (id: string) => {
+    if (!confirm("Tem certeza que deseja apagar este sonho?")) return;
+    
+    try {
+      const { error } = await supabase.from('projects').delete().eq('id', id);
+      if (error) throw error;
+      setProjects(projects.filter(p => p.id !== id));
+    } catch (error: any) {
+      alert("Erro ao deletar: " + error.message);
+    }
   };
 
   const calculateDaysRemaining = (date?: string) => {
@@ -182,11 +279,13 @@ const Projetos: React.FC = () => {
       {isAdding && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-300">
           <div className="bg-white dark:bg-zinc-900 w-full max-w-5xl rounded-[2.5rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300 flex flex-col md:flex-row max-h-[90vh]">
-            <div className="w-full md:w-1/3 bg-zinc-100 dark:bg-zinc-800/50 relative group">
+            
+            {/* --- FIX MOBILE: h-64 no mobile, h-auto no desktop, shrink-0 para não esmagar --- */}
+            <div className="w-full h-64 md:h-auto md:w-1/3 bg-zinc-100 dark:bg-zinc-800/50 relative group shrink-0">
               {imagePreview ? (
                 <>
                   <img src={imagePreview} className="w-full h-full object-cover" alt="Preview" />
-                  <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px] flex flex-col items-center justify-center p-6 text-center text-white">
+                  <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px] flex flex-col items-center justify-center p-6 text-center text-white opacity-0 group-hover:opacity-100 transition-opacity">
                     <button onClick={() => fileInputRef.current?.click()} className="p-4 bg-white/20 hover:bg-white/30 rounded-full transition-all mb-4">
                       <Camera size={32} />
                     </button>
@@ -247,7 +346,13 @@ const Projetos: React.FC = () => {
                 </div>
                 <div className="flex items-center gap-3 w-full sm:w-auto">
                   <button onClick={resetForm} className="flex-1 sm:flex-none px-6 py-4 text-xs font-black uppercase tracking-widest text-zinc-400">Cancelar</button>
-                  <button onClick={addProject} className="flex-1 sm:flex-none px-10 py-4 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-2xl text-xs font-black uppercase shadow-2xl">Criar Meu Sonho</button>
+                  <button 
+                    onClick={addProject} 
+                    disabled={isLoading}
+                    className="flex-1 sm:flex-none px-10 py-4 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-2xl text-xs font-black uppercase shadow-2xl disabled:opacity-50 flex items-center gap-2 justify-center"
+                  >
+                    {isLoading ? <Loader2 className="animate-spin" size={16}/> : 'Criar Meu Sonho'}
+                  </button>
                 </div>
               </div>
             </div>
@@ -265,7 +370,7 @@ const Projetos: React.FC = () => {
                <button onClick={() => setViewingProject(null)} className="absolute top-6 right-6 p-2 bg-white/20 hover:bg-white/40 backdrop-blur-md rounded-full text-white"><X size={24} /></button>
                <div className="absolute bottom-6 left-8">
                   <h3 className="text-3xl font-black text-white uppercase tracking-tighter">{viewingProject.title}</h3>
-                  <p className="text-white/70 text-sm font-medium mt-1">Sonho iniciado em {viewingProject.contributions?.[viewingProject.contributions.length-1]?.date || 'hoje'}</p>
+                  <p className="text-white/70 text-sm font-medium mt-1">Status: {viewingProject.status === 'active' ? 'Em andamento' : 'Pausado'}</p>
                </div>
             </div>
 
@@ -276,18 +381,8 @@ const Projetos: React.FC = () => {
                     <History size={14} /> Histórico de Evolução
                   </h4>
                   <div className="space-y-4">
-                    {viewingProject.contributions && viewingProject.contributions.length > 0 ? viewingProject.contributions.map((c) => (
-                      <div key={c.id} className="flex items-center justify-between p-4 bg-zinc-50 dark:bg-zinc-950 border border-zinc-100 dark:border-zinc-800 rounded-2xl">
-                        <div className="flex items-center gap-4">
-                          <div className="w-10 h-10 bg-emerald-500/10 text-emerald-500 rounded-xl flex items-center justify-center"><DollarSign size={20} /></div>
-                          <div>
-                            <p className="text-sm font-black">R$ {c.amount.toLocaleString()}</p>
-                            <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Via {c.accountName}</p>
-                          </div>
-                        </div>
-                        <span className="text-[10px] font-bold text-zinc-400">{c.date}</span>
-                      </div>
-                    )) : <p className="text-sm text-zinc-500 italic">Nenhuma movimentação ainda.</p>}
+                    {/* Nota: Historico detalhado exige tabela de transacoes linkadas, aqui mostramos resumo */}
+                    <p className="text-sm text-zinc-500 italic">O histórico detalhado aparecerá nas transações.</p>
                   </div>
                 </div>
               </div>
@@ -346,7 +441,7 @@ const Projetos: React.FC = () => {
       {/* Project Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
         {projects.map((project) => {
-          const progress = project.targetValue ? Math.min((project.currentValue! / project.targetValue) * 100, 100) : 0;
+          const progress = project.targetValue ? Math.min(((project.currentValue || 0) / project.targetValue) * 100, 100) : 0;
           const daysLeft = calculateDaysRemaining(project.deadline);
           
           return (
@@ -362,7 +457,7 @@ const Projetos: React.FC = () => {
                 )}
                 
                 <div className="absolute top-4 right-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-all duration-300 transform translate-y-2 group-hover:translate-y-0">
-                  <button onClick={() => deleteProject(project.id)} className="p-2.5 bg-white/20 backdrop-blur-md rounded-xl text-white hover:bg-rose-500"><Trash2 size={14} /></button>
+                  <button onClick={(e) => { e.stopPropagation(); deleteProject(project.id); }} className="p-2.5 bg-white/20 backdrop-blur-md rounded-xl text-white hover:bg-rose-500"><Trash2 size={14} /></button>
                 </div>
 
                 <div className="absolute top-4 left-4">
@@ -390,11 +485,11 @@ const Projetos: React.FC = () => {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="bg-zinc-50 dark:bg-zinc-950 p-3 rounded-2xl border border-zinc-100 dark:border-zinc-800 shadow-inner">
                     <span className="block text-[8px] font-black text-zinc-400 uppercase tracking-widest mb-1">Acumulado</span>
-                    <span className="text-sm font-black text-emerald-500">R$ {project.currentValue?.toLocaleString()}</span>
+                    <span className="text-sm font-black text-emerald-500">R$ {(project.currentValue || 0).toLocaleString()}</span>
                   </div>
                   <div className="bg-zinc-50 dark:bg-zinc-950 p-3 rounded-2xl border border-zinc-100 dark:border-zinc-800 shadow-inner">
                     <span className="block text-[8px] font-black text-zinc-400 uppercase tracking-widest mb-1">Meta Total</span>
-                    <span className="text-sm font-black text-zinc-600 dark:text-zinc-300">R$ {project.targetValue?.toLocaleString()}</span>
+                    <span className="text-sm font-black text-zinc-600 dark:text-zinc-300">R$ {(project.targetValue || 0).toLocaleString()}</span>
                   </div>
                 </div>
 
