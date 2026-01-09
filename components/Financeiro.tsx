@@ -147,7 +147,6 @@ const Financeiro: React.FC = () => {
                     <td className="px-6 py-5"><CategoryIcon category={t.category} /></td>
                     <td className="px-6 py-5">
                       <div className="flex items-center gap-3">
-                        {/* PROTEÇÃO CONTRA TELA PRETA AQUI: (t.account || '?') */}
                         <div className="w-8 h-8 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-[10px] font-black border border-zinc-200 dark:border-zinc-700">
                           {(t.account || '?').substring(0, 1)}
                         </div>
@@ -158,15 +157,15 @@ const Financeiro: React.FC = () => {
                       </div>
                     </td>
                     <td className="px-6 py-5">
-                       {t.division === 'shared' ? ( <div className="flex items-center gap-1.5 text-[10px] font-black text-purple-600 bg-purple-100 dark:bg-purple-900/30 px-2 py-1 rounded-full w-fit"><Users size={12} /> 50/50</div> ) : ( <div className="flex items-center gap-1.5 text-[10px] font-black text-zinc-500 bg-zinc-100 dark:bg-zinc-800 px-2 py-1 rounded-full w-fit"><User size={12} /> INDIV.</div> )}
+                        {t.division === 'shared' ? ( <div className="flex items-center gap-1.5 text-[10px] font-black text-purple-600 bg-purple-100 dark:bg-purple-900/30 px-2 py-1 rounded-full w-fit"><Users size={12} /> 50/50</div> ) : ( <div className="flex items-center gap-1.5 text-[10px] font-black text-zinc-500 bg-zinc-100 dark:bg-zinc-800 px-2 py-1 rounded-full w-fit"><User size={12} /> INDIV.</div> )}
                     </td>
                     <td className="px-6 py-5">
-                       {t.status === 'paid' && <span className="flex items-center gap-1 text-[10px] font-black text-emerald-600 bg-emerald-100 dark:bg-emerald-900/30 px-3 py-1 rounded-full w-fit"><CheckCircle2 size={12} /> PAGO</span>}
-                       {t.status === 'pending' && <span className="flex items-center gap-1 text-[10px] font-black text-amber-600 bg-amber-100 dark:bg-amber-900/30 px-3 py-1 rounded-full w-fit"><Clock size={12} /> PENDENTE</span>}
-                       {t.status === 'overdue' && <span className="flex items-center gap-1 text-[10px] font-black text-rose-600 bg-rose-100 dark:bg-rose-900/30 px-3 py-1 rounded-full w-fit animate-pulse"><AlertTriangle size={12} /> ATRASADO</span>}
+                        {t.status === 'paid' && <span className="flex items-center gap-1 text-[10px] font-black text-emerald-600 bg-emerald-100 dark:bg-emerald-900/30 px-3 py-1 rounded-full w-fit"><CheckCircle2 size={12} /> PAGO</span>}
+                        {t.status === 'pending' && <span className="flex items-center gap-1 text-[10px] font-black text-amber-600 bg-amber-100 dark:bg-amber-900/30 px-3 py-1 rounded-full w-fit"><Clock size={12} /> PENDENTE</span>}
+                        {t.status === 'overdue' && <span className="flex items-center gap-1 text-[10px] font-black text-rose-600 bg-rose-100 dark:bg-rose-900/30 px-3 py-1 rounded-full w-fit animate-pulse"><AlertTriangle size={12} /> ATRASADO</span>}
                     </td>
                     <td className="px-6 py-5 text-right">
-                       <span className={`text-sm font-black ${t.type === 'income' ? 'text-emerald-500' : 'text-rose-500'}`}>{t.type === 'income' ? '+' : '-'} R$ {t.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                        <span className={`text-sm font-black ${t.type === 'income' ? 'text-emerald-500' : 'text-rose-500'}`}>{t.type === 'income' ? '+' : '-'} R$ {t.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
                     </td>
                     <td className="px-6 py-5"><button onClick={() => deleteTransaction(t.id)} className="p-2 hover:bg-rose-500 hover:text-white rounded-xl transition-all opacity-0 group-hover:opacity-100"><Trash2 size={16} /></button></td>
                   </tr>
@@ -177,10 +176,24 @@ const Financeiro: React.FC = () => {
         </div>
       </div>
 
+      {/* --- MODAL COM CORREÇÃO PARA MOBILE --- */}
       {showAddForm && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-300">
-          <div className="bg-white dark:bg-zinc-900 w-full max-w-2xl rounded-[3rem] p-10 shadow-2xl animate-in zoom-in-95 duration-300 relative overflow-hidden border border-zinc-200 dark:border-zinc-800">
-             <div className="flex justify-between items-center mb-8"><h3 className="text-2xl font-black tracking-tighter uppercase">Registrar no Command Center</h3><button onClick={() => setShowAddForm(false)} className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full"><X size={24} /></button></div>
+        // 1. O Container Principal: Agora tem overflow-y-auto e z-index alto
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 overflow-y-auto">
+          
+          {/* 2. O Backdrop (Fundo): Fica fixo atrás e fecha ao clicar */}
+          <div 
+             className="fixed inset-0 bg-black/80 backdrop-blur-md transition-opacity"
+             onClick={() => setShowAddForm(false)}
+          />
+
+          {/* 3. O Card: Agora é relative e tem scroll interno (max-h) se for muito grande */}
+          <div className="relative bg-white dark:bg-zinc-900 w-full max-w-2xl rounded-[3rem] p-8 md:p-10 shadow-2xl animate-in zoom-in-95 duration-300 border border-zinc-200 dark:border-zinc-800 max-h-[90vh] overflow-y-auto scrollbar-hide">
+             <div className="flex justify-between items-center mb-8">
+                <h3 className="text-2xl font-black tracking-tighter uppercase">Registrar no Command Center</h3>
+                <button onClick={() => setShowAddForm(false)} className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full transition-colors"><X size={24} /></button>
+             </div>
+             
              <form onSubmit={handleAddTransaction} className="space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                    <div className="space-y-1.5"><label className="text-[10px] font-black uppercase text-zinc-400 tracking-widest ml-1">Descrição</label><input required className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-4 text-sm font-bold" value={newTransaction.description} onChange={e => setNewTransaction({...newTransaction, description: e.target.value})} /></div>
