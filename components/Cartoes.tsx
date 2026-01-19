@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo } from 'react';
 import { 
   CreditCard as CardIcon, 
@@ -59,17 +58,18 @@ const Cartoes: React.FC = () => {
   const [isAddPurchaseOpen, setIsAddPurchaseOpen] = useState(false);
   const [isPayInvoiceOpen, setIsPayInvoiceOpen] = useState(false);
 
-  // Card Form State
   const [newCard, setNewCard] = useState({
     name: '', lastDigits: '', owner: userProfile.name, brand: appSettings.cardBrands[0] || 'mastercard', closingDay: '10', bestDay: '1', limit: '', color: 'from-zinc-900 to-zinc-950'
   });
   
-  // Purchase Form State
   const [newPurchase, setNewPurchase] = useState({
-    desc: '', store: '', amount: '', installments: '1'
+    desc: '', 
+    store: '', 
+    amount: '', 
+    installments: '1',
+    dueDate: new Date().toISOString().split('T')[0]
   });
 
-  // Invoice Payment State
   const [paymentInfo, setPaymentInfo] = useState({
     accountId: accounts[0]?.id || '',
     date: new Date().toISOString().split('T')[0]
@@ -112,20 +112,22 @@ const Cartoes: React.FC = () => {
     const amountPerInst = amountTotal / instCount;
 
     for (let i = 0; i < instCount; i++) {
-      const d = new Date();
+      const d = new Date(newPurchase.dueDate);
       d.setMonth(d.getMonth() + i);
+      
       addTransaction({
         description: `${newPurchase.desc} (${newPurchase.store}) ${instCount > 1 ? `${i + 1}/${instCount}` : ''}`,
         amount: amountPerInst,
         type: 'expense',
         category: 'Lazer',
         date: d.toISOString().split('T')[0],
+        dueDate: d.toISOString().split('T')[0],
         account: activeCard.name,
         status: 'pending'
       });
     }
     setIsAddPurchaseOpen(false);
-    setNewPurchase({ desc: '', store: '', amount: '', installments: '1' });
+    setNewPurchase({ desc: '', store: '', amount: '', installments: '1', dueDate: new Date().toISOString().split('T')[0] });
   };
 
   const handlePayInvoice = () => {
@@ -321,7 +323,7 @@ const Cartoes: React.FC = () => {
                     </select>
                   </div>
                   <div className="space-y-2">
-                    <label className="text-[10px] font-black uppercase text-zinc-400 tracking-widest ml-1">Vencimento</label>
+                    <label className="text-[10px] font-black uppercase text-zinc-400 tracking-widest ml-1">Dia do Vencimento</label>
                     <input type="number" placeholder="Dia" className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-5 text-sm font-bold focus:outline-none" value={newCard.closingDay} onChange={e => setNewCard({...newCard, closingDay: e.target.value})} />
                   </div>
                 </div>
@@ -340,21 +342,24 @@ const Cartoes: React.FC = () => {
       {/* MODAL: ADD PURCHASE */}
       {isAddPurchaseOpen && (
         <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-300">
-          <div className="bg-white dark:bg-zinc-900 w-full max-w-lg rounded-[3rem] p-10 shadow-2xl animate-in zoom-in-95 duration-300">
+          <div className="bg-white dark:bg-zinc-900 w-full max-w-2xl rounded-[3rem] p-10 shadow-2xl animate-in zoom-in-95 duration-300">
              <div className="flex justify-between items-center mb-8">
                 <h3 className="text-2xl font-black uppercase tracking-tighter">Lançar na Fatura</h3>
                 <button onClick={() => setIsAddPurchaseOpen(false)} className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full"><X size={28} /></button>
              </div>
              <form onSubmit={handleAddPurchase} className="space-y-6">
-                <div className="space-y-1">
-                   <label className="text-[10px] font-black uppercase text-zinc-400 tracking-widest ml-1">O que foi comprado?</label>
-                   <input required autoFocus className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-4 text-sm font-bold" value={newPurchase.desc} onChange={e => setNewPurchase({...newPurchase, desc: e.target.value})} />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                     <label className="text-[10px] font-black uppercase text-zinc-400 tracking-widest ml-1">O que foi comprado?</label>
+                     <input required autoFocus className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-4 text-sm font-bold" value={newPurchase.desc} onChange={e => setNewPurchase({...newPurchase, desc: e.target.value})} />
+                  </div>
+                  <div className="space-y-1">
+                     <label className="text-[10px] font-black uppercase text-zinc-400 tracking-widest ml-1">Estabelecimento</label>
+                     <input required className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-4 text-sm font-bold" value={newPurchase.store} onChange={e => setNewPurchase({...newPurchase, store: e.target.value})} />
+                  </div>
                 </div>
-                <div className="space-y-1">
-                   <label className="text-[10px] font-black uppercase text-zinc-400 tracking-widest ml-1">Estabelecimento</label>
-                   <input required className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-4 text-sm font-bold" value={newPurchase.store} onChange={e => setNewPurchase({...newPurchase, store: e.target.value})} />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                    <div className="space-y-1">
                       <label className="text-[10px] font-black uppercase text-zinc-400 tracking-widest ml-1">Valor Total</label>
                       <input required type="number" step="0.01" className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-4 text-sm font-black text-rose-500" value={newPurchase.amount} onChange={e => setNewPurchase({...newPurchase, amount: e.target.value})} />
@@ -364,6 +369,10 @@ const Cartoes: React.FC = () => {
                       <select className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-4 text-sm font-bold" value={newPurchase.installments} onChange={e => setNewPurchase({...newPurchase, installments: e.target.value})}>
                          {[1,2,3,4,5,6,10,12,24].map(n => <option key={n} value={n}>{n}x</option>)}
                       </select>
+                   </div>
+                   <div className="space-y-1">
+                      <label className="text-[10px] font-black uppercase text-zinc-400 tracking-widest ml-1">Vencimento</label>
+                      <input required type="date" className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-4 text-sm font-bold" value={newPurchase.dueDate} onChange={e => setNewPurchase({...newPurchase, dueDate: e.target.value})} />
                    </div>
                 </div>
                 <button type="submit" className="w-full py-5 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded-2xl text-xs font-black uppercase tracking-widest">Confirmar Lançamento</button>
